@@ -75,6 +75,68 @@ def _source_readonly_uri() -> str:
     return f"file:{src}?mode=ro"
 
 
+def _readonly_uri(path: Path) -> str:
+    return f"file:{path.resolve().as_posix()}?mode=ro"
+
+
+def _can_read_sqlite_schema(path: Path) -> bool:
+    if not path.exists() or not os.access(path, os.R_OK):
+        return False
+    try:
+        with sqlite3.connect(_readonly_uri(path), uri=True) as conn:
+            conn.execute("PRAGMA query_only = ON")
+            conn.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
+        return True
+    except sqlite3.Error:
+        return False
+
+
+def source_direct_ok() -> bool:
+    return _can_read_sqlite_schema(source_path())
+
+
+def snapshot_readable_ok() -> bool:
+    return _snapshot_ok and _can_read_sqlite_schema(snapshot_path())
+
+
+def resolve_active_fntv_database() -> dict[str, Any]:
+    global _active_database
+
+    snap_ok = snapshot_readable_ok()
+    src_ok = source_direct_ok()
+    if snap_ok:
+        _active_database = "snapshot"
+        return {
+            "active_database": "snapshot",
+            "active_db_path": str(snapshot_path()),
+            "availability": "available",
+            "degraded": False,
+            "source_direct_ok": src_ok,
+            "snapshot_ok": True,
+        }
+
+    if src_ok:
+        _active_database = "source"
+        return {
+            "active_database": "source",
+            "active_db_path": str(source_path()),
+            "availability": "degraded",
+            "degraded": True,
+            "source_direct_ok": True,
+            "snapshot_ok": False,
+        }
+
+    _active_database = "none"
+    return {
+        "active_database": "none",
+        "active_db_path": None,
+        "availability": "unavailable",
+        "degraded": False,
+        "source_direct_ok": False,
+        "snapshot_ok": False,
+    }
+
+
 def _validate_snapshot(db_path: Path) -> tuple[bool, str]:
     try:
         conn = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
@@ -250,3 +312,13 @@ def open_fntv_source_connection() -> sqlite3.Connection:
         return conn
     except sqlite3.Error as exc:
         raise AppError("FNTV_DATABASE_OPEN_FAILED", "飞牛影视数据库只读打开失败", 503) from exc
+
+
+def open_active_fntv_connection() -> sqlite3.Connection:
+    resolved = resolve_active_fntv_database()
+    active = resolved["active_database"]
+    if active == "snapshot":
+        return open_snapshot_connection()
+    if active == "source":
+        return open_fntv_source_connection()
+    raise AppError("FNTV_DATABASE_UNAVAILABLE", "飞牛影视数据库不可用，请检查快照或源库只读挂载", 503)

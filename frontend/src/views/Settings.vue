@@ -31,7 +31,7 @@
         <el-descriptions-item label="快照目录可写">{{ status.fntv.snapshot_dir_writable ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="快照文件存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="快照状态">
-          <el-tag :type="status.fntv.snapshot_ok ? 'success' : 'danger'" size="small">
+          <el-tag :type="snapshotStatusTag" size="small">
             {{ status.fntv.snapshot_ok ? '正常' : '异常' }}
           </el-tag>
         </el-descriptions-item>
@@ -235,16 +235,22 @@ const sourceDirectLabel = computed(() => {
 
 const databaseAvailabilityLabel = computed(() => {
   if (!status.value) return '-'
-  if (status.value.fntv.ok && status.value.fntv.snapshot_ok) return '飞牛数据库正常'
-  if (status.value.fntv.ok && !status.value.fntv.snapshot_ok && status.value.fntv.source_direct_ok === true) return '源库直连降级'
+  if (status.value.fntv.availability === 'available') return '飞牛数据库正常'
+  if (status.value.fntv.availability === 'degraded') return '源库直连降级'
   return '飞牛数据库异常'
 })
 
 const databaseAvailabilityTag = computed(() => {
   if (!status.value) return 'info'
-  if (status.value.fntv.ok && status.value.fntv.snapshot_ok) return 'success'
-  if (status.value.fntv.ok && !status.value.fntv.snapshot_ok && status.value.fntv.source_direct_ok === true) return 'warning'
+  if (status.value.fntv.availability === 'available') return 'success'
+  if (status.value.fntv.availability === 'degraded') return 'warning'
   return 'danger'
+})
+
+const snapshotStatusTag = computed(() => {
+  if (!status.value) return 'info'
+  if (status.value.fntv.snapshot_ok) return 'success'
+  return status.value.fntv.availability === 'degraded' ? 'warning' : 'danger'
 })
 
 const snapshotRefreshLabel = computed(() => {
@@ -304,9 +310,11 @@ function buildDiagnosticsJson(): string {
       source_readable: status.value.fntv.source_readable,
       source_direct_ok: status.value.fntv.source_direct_ok,
       active_database: status.value.fntv.active_database,
+      active_db_path: status.value.fntv.active_db_path ?? null,
       fallback_to_source: status.value.fntv.fallback_to_source,
       availability: status.value.fntv.availability ?? databaseAvailabilityLabel.value,
-      degraded: status.value.fntv.degraded ?? (status.value.fntv.ok && !status.value.fntv.snapshot_ok && status.value.fntv.source_direct_ok === true),
+      degraded: status.value.fntv.degraded ?? status.value.fntv.availability === 'degraded',
+      warnings: status.value.fntv.warnings ?? [],
       snapshot_exists: status.value.fntv.snapshot_exists,
       snapshot_dir_exists: status.value.fntv.snapshot_dir_exists,
       snapshot_dir_writable: status.value.fntv.snapshot_dir_writable,

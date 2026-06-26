@@ -77,8 +77,8 @@ const databaseStatusLabel = computed(() => {
 async function refreshDatabaseStatus() {
   try {
     const status = await fetchDatabaseStatus()
-    databaseOk.value = status.fntv.ok && status.fntv.snapshot_ok
-    databaseDegraded.value = status.fntv.ok && !status.fntv.snapshot_ok && status.fntv.source_direct_ok === true
+    databaseOk.value = status.fntv.availability === 'available'
+    databaseDegraded.value = status.fntv.availability === 'degraded'
   } catch {
     databaseOk.value = false
     databaseDegraded.value = false

@@ -33,7 +33,9 @@ export interface DatabaseStatus {
     active_database: string
     fallback_to_source: boolean
     degraded?: boolean
-    availability?: 'normal' | 'degraded' | 'unavailable'
+    active_db_path?: string | null
+    availability?: 'available' | 'degraded' | 'unavailable'
+    warnings?: Array<{ code: string | null; type: string | null; message: string | null }>
     snapshot_path_container: string
     snapshot_exists: boolean
     snapshot_dir_exists: boolean

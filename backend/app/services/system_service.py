@@ -9,12 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.fntv_readonly import assert_readonly_write_fails
+from app.db.fntv_readonly import assert_readonly_write_fails, open_fntv_connection
 from app.db.fntv_snapshot import (
-    active_database,
     copy_fntv_snapshot,
-    open_fntv_source_connection,
     refresh_fntv_snapshot,
+    resolve_active_fntv_database,
     snapshot_status,
 )
 from app.db.migrations import run_migrations
@@ -58,6 +57,14 @@ def storage_status() -> dict[str, Any]:
 
 def database_status() -> dict[str, Any]:
     snap_info = snapshot_status()
+    resolved = resolve_active_fntv_database()
+    warnings: list[dict[str, str | None]] = []
+    if snap_info["snapshot_error"]:
+        warnings.append({
+            "code": snap_info["snapshot_error"],
+            "type": snap_info["snapshot_error_type"],
+            "message": snap_info["snapshot_error_message"],
+        })
     fntv: dict[str, Any] = {
         "source_path_container": snap_info["source_path_container"],
         "source_exists": snap_info["source_exists"],
@@ -69,7 +76,7 @@ def database_status() -> dict[str, Any]:
         "snapshot_dir_writable": snap_info["snapshot_dir_writable"],
         "snapshot_tmp_path": snap_info["snapshot_tmp_path"],
         "snapshot_last_refresh_at": snap_info["snapshot_last_refresh_at"],
-        "snapshot_ok": snap_info["snapshot_ok"],
+        "snapshot_ok": resolved["snapshot_ok"],
         "snapshot_error": snap_info["snapshot_error"],
         "snapshot_error_type": snap_info["snapshot_error_type"],
         "snapshot_error_message": snap_info["snapshot_error_message"],
@@ -77,9 +84,13 @@ def database_status() -> dict[str, Any]:
         "error": None,
         "error_type": None,
         "error_message": None,
-        "source_direct_ok": None,
-        "active_database": "none",
-        "fallback_to_source": False,
+        "warnings": warnings,
+        "source_direct_ok": resolved["source_direct_ok"],
+        "active_database": resolved["active_database"],
+        "active_db_path": resolved["active_db_path"],
+        "availability": resolved["availability"],
+        "degraded": resolved["degraded"],
+        "fallback_to_source": resolved["active_database"] == "source",
         "detected_table_count": 0,
         "detected_tables": [],
         "detected_columns_by_table": {},
@@ -95,37 +106,28 @@ def database_status() -> dict[str, Any]:
         },
     }
 
-    source_direct_ok = None
-    try:
-        with open_fntv_source_connection() as conn:
-            conn.execute("SELECT 1").fetchone()
-        source_direct_ok = True
-    except Exception:
-        source_direct_ok = False
-    fntv["source_direct_ok"] = source_direct_ok
-
-    try:
-        diag = schema_diagnostics()
-        fntv.update(diag)
-        fntv["write_probe_failed"] = assert_readonly_write_fails()
-    except Exception as exc:  # noqa: BLE001
-        fntv.update({
-            "ok": False,
-            "error": "FNTV_DIAG_FAILED",
-            "error_type": type(exc).__name__,
-            "error_message": str(exc),
-        })
-
-    current_active = active_database()
-    fntv["active_database"] = current_active
-    fntv["fallback_to_source"] = current_active == "source"
-    fntv["degraded"] = bool(fntv.get("ok") and not snap_info["snapshot_ok"] and source_direct_ok)
-    if fntv.get("ok") and snap_info["snapshot_ok"]:
-        fntv["availability"] = "normal"
-    elif fntv.get("ok") and source_direct_ok:
-        fntv["availability"] = "degraded"
+    if resolved["active_database"] == "none":
+        fntv["error"] = "FNTV_DATABASE_UNAVAILABLE"
+        fntv["error_type"] = "DatabaseUnavailable"
+        fntv["error_message"] = "飞牛影视数据库不可用，请检查快照或源库只读挂载"
     else:
-        fntv["availability"] = "unavailable"
+        try:
+            with open_fntv_connection() as conn:
+                diag = schema_diagnostics(conn=conn, active_db_path=resolved["active_db_path"])
+            fntv.update(diag)
+            fntv["ok"] = bool(diag.get("ok"))
+            fntv["write_probe_failed"] = assert_readonly_write_fails()
+            if fntv["ok"]:
+                fntv["error"] = None
+                fntv["error_type"] = None
+                fntv["error_message"] = None
+        except Exception as exc:  # noqa: BLE001
+            fntv.update({
+                "ok": False,
+                "error": "FNTV_DIAG_FAILED",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
 
     if not snap_info["source_exists"]:
         fntv["error"] = fntv.get("error") or "FNTV_DATABASE_NOT_FOUND"

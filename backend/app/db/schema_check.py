@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.core.errors import AppError
@@ -35,19 +36,34 @@ def quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def inspect_schema() -> dict[str, TableInfo]:
+def _readonly_uri(path: Path) -> str:
+    return f"file:{path.resolve().as_posix()}?mode=ro"
+
+
+def _inspect_schema_with_connection(conn: sqlite3.Connection) -> dict[str, TableInfo]:
+    table_rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()
+    tables: dict[str, TableInfo] = {}
+    for row in table_rows:
+        name = str(row["name"])
+        escaped = quote_identifier(name)
+        columns = [str(col["name"]) for col in conn.execute(f"PRAGMA table_info({escaped})").fetchall()]
+        tables[name] = TableInfo(name=name, columns=columns)
+    return tables
+
+
+def inspect_schema(conn: sqlite3.Connection | None = None, active_db_path: str | Path | None = None) -> dict[str, TableInfo]:
     try:
-        with open_fntv_connection() as conn:
-            table_rows = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-            ).fetchall()
-            tables: dict[str, TableInfo] = {}
-            for row in table_rows:
-                name = str(row["name"])
-                escaped = quote_identifier(name)
-                columns = [str(col["name"]) for col in conn.execute(f"PRAGMA table_info({escaped})").fetchall()]
-                tables[name] = TableInfo(name=name, columns=columns)
-            return tables
+        if conn is not None:
+            return _inspect_schema_with_connection(conn)
+        if active_db_path is not None:
+            with sqlite3.connect(_readonly_uri(Path(active_db_path)), uri=True) as path_conn:
+                path_conn.row_factory = sqlite3.Row
+                path_conn.execute("PRAGMA query_only = ON")
+                return _inspect_schema_with_connection(path_conn)
+        with open_fntv_connection() as active_conn:
+            return _inspect_schema_with_connection(active_conn)
     except AppError:
         raise
     except sqlite3.Error as exc:
@@ -68,7 +84,7 @@ def schema_status() -> dict[str, Any]:
     }
 
 
-def schema_diagnostics() -> dict[str, Any]:
+def schema_diagnostics(conn: sqlite3.Connection | None = None, active_db_path: str | Path | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {
         "ok": False,
         "error": None,
@@ -89,26 +105,14 @@ def schema_diagnostics() -> dict[str, Any]:
         },
     }
     try:
-        with open_fntv_connection() as conn:
-            table_rows = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-            ).fetchall()
-        table_names = [str(r["name"]) for r in table_rows]
+        tables = inspect_schema(conn=conn, active_db_path=active_db_path)
+        table_names = [table.name for table in tables.values()]
         result["detected_table_count"] = len(table_names)
         result["detected_tables"] = table_names
 
         columns_by_table: dict[str, list[str]] = {}
-        tables: dict[str, TableInfo] = {}
-        for tname in table_names:
-            escaped = quote_identifier(tname)
-            try:
-                with open_fntv_connection() as conn:
-                    cols = [str(c["name"]) for c in conn.execute(f"PRAGMA table_info({escaped})").fetchall()]
-                columns_by_table[tname] = cols
-                tables[tname] = TableInfo(name=tname, columns=cols)
-            except (AppError, sqlite3.Error) as col_exc:
-                logger.warning("PRAGMA table_info failed for table %s: %s", tname, col_exc)
-                columns_by_table[tname] = [f"<error: {type(col_exc).__name__}>"]
+        for tname, table in tables.items():
+            columns_by_table[tname] = table.columns
 
         result["detected_columns_by_table"] = columns_by_table
 

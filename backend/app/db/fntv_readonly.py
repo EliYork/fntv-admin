@@ -3,10 +3,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Iterable
-from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
 from app.core.errors import AppError
 
 logger = logging.getLogger(__name__)
@@ -14,35 +12,14 @@ logger = logging.getLogger(__name__)
 WRITE_KEYWORDS = ("insert", "update", "delete", "drop", "alter", "vacuum", "reindex", "create")
 
 
-def _readonly_uri(path: Path) -> str:
-    return f"file:{path.resolve().as_posix()}?mode=ro"
-
-
 def open_fntv_connection() -> sqlite3.Connection:
-    from app.db.fntv_snapshot import open_snapshot_connection, set_active_database, snapshot_path
-
-    snap = snapshot_path()
-    if snap.exists():
-        try:
-            conn = open_snapshot_connection()
-            set_active_database("snapshot")
-            return conn
-        except (AppError, sqlite3.Error) as exc:
-            logger.warning("snapshot open failed, falling back to source: %s", exc)
-
-    path = settings.fntv_db_path
-    if not path.exists():
-        set_active_database("none")
-        raise AppError("FNTV_DATABASE_NOT_FOUND", "飞牛影视数据库不存在，请检查 Docker Compose 只读挂载路径", 503)
     try:
-        conn = sqlite3.connect(_readonly_uri(path), uri=True)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA query_only = ON")
-        set_active_database("source")
-        logger.warning("using source database directly (snapshot unavailable)")
-        return conn
+        from app.db.fntv_snapshot import open_active_fntv_connection
+
+        return open_active_fntv_connection()
+    except AppError:
+        raise
     except sqlite3.Error as exc:
-        set_active_database("none")
         raise AppError("FNTV_DATABASE_OPEN_FAILED", "飞牛影视数据库只读打开失败", 503) from exc
 
 
