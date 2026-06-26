@@ -127,7 +127,7 @@ DOCKERHUB_TOKEN
 - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
 
-fntv-admin 使用快照机制读取飞牛数据库：启动时将源库复制到 `/data/cache/trimmedia.snapshot.db`，所有查询读取快照库。这样可以避免 SQLite WAL 模式、锁、目录权限等问题。源库始终保持只读，不会被修改。
+fntv-admin 使用 SQLite backup API 生成快照读取飞牛数据库：启动时以只读方式打开源库，使用 `sqlite3.Connection.backup()` 生成单文件快照到 `/data/cache/trimmedia.snapshot.db`，所有查询读取快照库。快照经过校验后原子替换，不写入源库、不 checkpoint 源库、不删除源库 wal/shm。快照不可用时自动降级为源库只读直连。
 
 如果数据库状态异常，优先检查：
 

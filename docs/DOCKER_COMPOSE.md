@@ -30,12 +30,14 @@ volumes:
 
 ## 快照机制
 
-飞牛数据库可能处于 SQLite WAL 模式，直接以只读方式打开原库时可能因为 `-wal`、`-shm` 文件或目录权限问题导致失败。fntv-admin 使用快照机制解决此问题：
+飞牛数据库可能处于 SQLite WAL 模式，直接以只读方式打开原库时可能因为 `-wal`、`-shm` 文件或目录权限问题导致失败。fntv-admin 使用 SQLite backup API 生成一致性快照解决此问题：
 
-1. 启动时将 `/fntv/trimmedia.db` 复制到 `/data/cache/trimmedia.snapshot.db`。
-2. 所有业务查询和 schema 探测读取快照库。
-3. 源库始终保持只读，不会被修改。
-4. 系统设置页可以手动刷新快照。
+1. 启动时以只读方式打开源库，使用 `sqlite3.Connection.backup()` 生成单文件快照到 `/data/cache/trimmedia.snapshot.db`。
+2. 快照经过 `PRAGMA quick_check` 校验后原子替换。
+3. 所有业务查询和 schema 探测读取快照库。
+4. 不写入源库，不 checkpoint 源库，不删除源库 wal/shm。
+5. 系统设置页可以手动刷新快照。
+6. 快照不可用时自动降级为源库只读直连。
 
 `/data` 必须读写挂载才能保存快照文件。`/fntv` 应尽量只读挂载；即使飞牛 UI 显示读写，后端仍然只读读取源库。
 

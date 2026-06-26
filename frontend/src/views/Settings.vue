@@ -32,6 +32,9 @@
         </el-descriptions-item>
         <el-descriptions-item label="最近刷新">{{ snapshotRefreshLabel }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.snapshot_error" label="快照错误">{{ status.fntv.snapshot_error }}</el-descriptions-item>
+        <el-descriptions-item label="当前数据源">
+          <el-tag :type="activeDatabaseTag" size="small">{{ activeDatabaseLabel }}</el-tag>
+        </el-descriptions-item>
       </el-descriptions>
       <div class="sub-section">
         <el-button type="primary" size="small" :loading="refreshing" @click="doRefresh">刷新快照</el-button>
@@ -215,6 +218,22 @@ const snapshotRefreshLabel = computed(() => {
   return new Date(ts * 1000).toLocaleString()
 })
 
+const activeDatabaseLabel = computed(() => {
+  if (!status.value) return '-'
+  const v = status.value.fntv.active_database
+  if (v === 'snapshot') return '快照'
+  if (v === 'source') return '源库直连（降级）'
+  return '未连接'
+})
+
+const activeDatabaseTag = computed(() => {
+  if (!status.value) return 'info'
+  const v = status.value.fntv.active_database
+  if (v === 'snapshot') return 'success'
+  if (v === 'source') return 'warning'
+  return 'danger'
+})
+
 function hasCapability(key: string): boolean {
   return !!status.value?.fntv.capabilities?.[key]
 }
@@ -248,6 +267,8 @@ function buildDiagnosticsJson(): string {
       source_exists: status.value.fntv.source_exists,
       source_readable: status.value.fntv.source_readable,
       source_direct_ok: status.value.fntv.source_direct_ok,
+      active_database: status.value.fntv.active_database,
+      fallback_to_source: status.value.fntv.fallback_to_source,
       snapshot_exists: status.value.fntv.snapshot_exists,
       snapshot_ok: status.value.fntv.snapshot_ok,
       snapshot_error: status.value.fntv.snapshot_error ?? null,

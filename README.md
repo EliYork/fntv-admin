@@ -127,7 +127,7 @@ docker.io/<DockerHub用户名>/fntv-admin:latest
 
 ```text
 /fntv/trimmedia.db                飞牛影视数据库，只读，由 /fntv 目录挂载提供
-/data/cache/trimmedia.snapshot.db 快照库，启动时从源库复制，业务查询读取此文件
+/data/cache/trimmedia.snapshot.db 快照库，SQLite backup API 生成，业务查询读取此文件
 /data/admin.db                    fntv-admin 增强数据
 /data/logs                        运行日志
 /data/cache                       缓存
@@ -150,13 +150,14 @@ docker.io/<DockerHub用户名>/fntv-admin:latest
 
 飞牛数据库可能处于 SQLite WAL 模式，直接以只读方式打开原库时可能因为 `-wal`、`-shm` 文件或目录权限问题导致 `unable to open database file`。
 
-fntv-admin 使用快照机制解决此问题：
+fntv-admin 使用 SQLite backup API 生成一致性快照解决此问题：
 
-1. 启动时将 `/fntv/trimmedia.db`（以及 `.db-wal`、`.db-shm`）复制到 `/data/cache/trimmedia.snapshot.db`。
-2. 所有业务查询和 schema 探测读取的是快照库，而非直接读取源库。
-3. 快照通过临时文件 + 原子替换生成，避免半写文件被查询。
-4. 源库始终保持只读，不会被修改。
+1. 启动时以只读方式打开源库 `/fntv/trimmedia.db`，使用 `sqlite3.Connection.backup()` 生成单文件快照到 `/data/cache/trimmedia.snapshot.db`。
+2. 快照生成后执行 `PRAGMA quick_check` 校验，校验通过后原子替换正式快照。
+3. 所有业务查询和 schema 探测读取快照库，而非直接读取源库。
+4. 不写入源库，不 checkpoint 源库，不删除源库的 wal/shm 文件。
 5. 系统设置页可以手动刷新快照。
+6. 如果快照不可用，自动降级为源库只读直连。
 
 容器内路径：
 

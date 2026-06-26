@@ -30,6 +30,8 @@ export interface DatabaseStatus {
     source_readable: boolean
     source_readonly_configured: boolean
     source_direct_ok: boolean | null
+    active_database: string
+    fallback_to_source: boolean
     snapshot_path_container: string
     snapshot_exists: boolean
     snapshot_last_refresh_at: number | null

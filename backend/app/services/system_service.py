@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.fntv_readonly import assert_readonly_write_fails, open_fntv_connection
 from app.db.fntv_snapshot import (
+    active_database,
     copy_fntv_snapshot,
     refresh_fntv_snapshot,
     snapshot_status,
@@ -71,6 +72,8 @@ def database_status() -> dict[str, Any]:
         "error_type": None,
         "error_message": None,
         "source_direct_ok": None,
+        "active_database": "none",
+        "fallback_to_source": False,
         "detected_table_count": 0,
         "detected_tables": [],
         "detected_columns_by_table": {},
@@ -106,6 +109,10 @@ def database_status() -> dict[str, Any]:
             "error_type": type(exc).__name__,
             "error_message": str(exc),
         })
+
+    current_active = active_database()
+    fntv["active_database"] = current_active
+    fntv["fallback_to_source"] = current_active == "source"
 
     if not snap_info["source_exists"]:
         fntv["error"] = fntv.get("error") or "FNTV_DATABASE_NOT_FOUND"
