@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.fntv_readonly import assert_readonly_write_fails, open_fntv_connection
 from app.db.migrations import run_migrations
-from app.db.schema_check import schema_status
+from app.db.schema_check import schema_diagnostics
 from app.models import Setting
 from app.utils.time import now_ts
 
@@ -40,17 +40,48 @@ def storage_status() -> dict[str, Any]:
 
 def database_status() -> dict[str, Any]:
     fntv_path = settings.fntv_db_path
-    fntv: dict[str, Any] = {"path": str(fntv_path), "exists": fntv_path.exists(), "readonly": True, "ok": False}
+    fntv: dict[str, Any] = {
+        "path": str(fntv_path),
+        "exists": fntv_path.exists(),
+        "readonly": True,
+        "ok": False,
+        "error": None,
+        "error_type": None,
+        "error_message": None,
+        "detected_table_count": 0,
+        "detected_tables": [],
+        "detected_columns_by_table": {},
+        "core_candidates": {"user_table": None, "item_table": None, "play_table": None},
+        "required_tables_status": {"user": False, "item": False, "item_user_play": False},
+        "capabilities": {
+            "can_read_users": False,
+            "can_read_items": False,
+            "can_read_play_history": False,
+            "can_join_user_names": False,
+            "can_join_item_titles": False,
+            "can_calculate_progress": False,
+        },
+    }
     if fntv_path.exists():
         try:
             with open_fntv_connection() as conn:
                 conn.execute("SELECT 1").fetchone()
-            schema = schema_status()
-            fntv.update({"ok": True, "schema": schema, "write_probe_failed": assert_readonly_write_fails()})
+            diag = schema_diagnostics()
+            fntv.update(diag)
+            fntv["write_probe_failed"] = assert_readonly_write_fails()
         except Exception as exc:  # noqa: BLE001
-            fntv.update({"ok": False, "error": str(exc)})
+            fntv.update({
+                "ok": False,
+                "error": "FNTV_OPEN_FAILED",
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
     else:
-        fntv.update({"error": "飞牛影视数据库不存在，请检查 Docker Compose 挂载路径"})
+        fntv.update({
+            "error": "FNTV_DATABASE_NOT_FOUND",
+            "error_type": "ConfigError",
+            "error_message": "飞牛影视数据库不存在，请检查 Docker Compose 挂载路径",
+        })
 
     admin = {
         "path": str(settings.admin_db_path),
