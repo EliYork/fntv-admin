@@ -16,6 +16,7 @@ services:
       APP_ENV: ${APP_ENV:-production}
       APP_SECRET_KEY: ${APP_SECRET_KEY:-change-me}
       FNTV_DB_PATH: ${FNTV_DB_PATH:-/fntv/trimmedia.db}
+      FNTV_SNAPSHOT_PATH: ${FNTV_SNAPSHOT_PATH:-/data/cache/trimmedia.snapshot.db}
       ADMIN_DB_PATH: ${ADMIN_DB_PATH:-/data/admin.db}
       LOG_DIR: ${LOG_DIR:-/data/logs}
       CACHE_DIR: ${CACHE_DIR:-/data/cache}

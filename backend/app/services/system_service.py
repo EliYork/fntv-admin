@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -9,10 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.fntv_readonly import assert_readonly_write_fails, open_fntv_connection
+from app.db.fntv_snapshot import (
+    copy_fntv_snapshot,
+    refresh_fntv_snapshot,
+    snapshot_status,
+)
 from app.db.migrations import run_migrations
 from app.db.schema_check import schema_diagnostics
 from app.models import Setting
 from app.utils.time import now_ts
+
+logger = logging.getLogger(__name__)
 
 
 def startup_check() -> None:
@@ -21,6 +29,14 @@ def startup_check() -> None:
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     run_migrations()
+    if settings.fntv_db_path.exists():
+        result = copy_fntv_snapshot()
+        if result.get("ok"):
+            logger.info("initial fntv snapshot created")
+        else:
+            logger.warning("initial fntv snapshot failed: %s", result.get("error"))
+    else:
+        logger.info("fntv source database not found, skipping initial snapshot")
 
 
 def storage_status() -> dict[str, Any]:
@@ -39,15 +55,22 @@ def storage_status() -> dict[str, Any]:
 
 
 def database_status() -> dict[str, Any]:
-    fntv_path = settings.fntv_db_path
+    snap_info = snapshot_status()
     fntv: dict[str, Any] = {
-        "path": str(fntv_path),
-        "exists": fntv_path.exists(),
-        "readonly": True,
+        "source_path_container": snap_info["source_path_container"],
+        "source_exists": snap_info["source_exists"],
+        "source_readable": snap_info["source_readable"],
+        "source_readonly_configured": snap_info["source_readonly_configured"],
+        "snapshot_path_container": snap_info["snapshot_path_container"],
+        "snapshot_exists": snap_info["snapshot_exists"],
+        "snapshot_last_refresh_at": snap_info["snapshot_last_refresh_at"],
+        "snapshot_ok": snap_info["snapshot_ok"],
+        "snapshot_error": snap_info["snapshot_error"],
         "ok": False,
         "error": None,
         "error_type": None,
         "error_message": None,
+        "source_direct_ok": None,
         "detected_table_count": 0,
         "detected_tables": [],
         "detected_columns_by_table": {},
@@ -62,26 +85,32 @@ def database_status() -> dict[str, Any]:
             "can_calculate_progress": False,
         },
     }
-    if fntv_path.exists():
-        try:
-            with open_fntv_connection() as conn:
-                conn.execute("SELECT 1").fetchone()
-            diag = schema_diagnostics()
-            fntv.update(diag)
-            fntv["write_probe_failed"] = assert_readonly_write_fails()
-        except Exception as exc:  # noqa: BLE001
-            fntv.update({
-                "ok": False,
-                "error": "FNTV_OPEN_FAILED",
-                "error_type": type(exc).__name__,
-                "error_message": str(exc),
-            })
-    else:
+
+    source_direct_ok = None
+    try:
+        with open_fntv_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+        source_direct_ok = True
+    except Exception:
+        source_direct_ok = False
+    fntv["source_direct_ok"] = source_direct_ok
+
+    try:
+        diag = schema_diagnostics()
+        fntv.update(diag)
+        fntv["write_probe_failed"] = assert_readonly_write_fails()
+    except Exception as exc:  # noqa: BLE001
         fntv.update({
-            "error": "FNTV_DATABASE_NOT_FOUND",
-            "error_type": "ConfigError",
-            "error_message": "飞牛影视数据库不存在，请检查 Docker Compose 挂载路径",
+            "ok": False,
+            "error": "FNTV_DIAG_FAILED",
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
         })
+
+    if not snap_info["source_exists"]:
+        fntv["error"] = fntv.get("error") or "FNTV_DATABASE_NOT_FOUND"
+        fntv["error_type"] = fntv.get("error_type") or "ConfigError"
+        fntv["error_message"] = fntv.get("error_message") or "飞牛影视数据库不存在，请检查 Docker Compose 只读挂载路径"
 
     admin = {
         "path": str(settings.admin_db_path),
@@ -118,4 +147,3 @@ def ensure_path_is_under_data(path: Path) -> bool:
     except ValueError:
         return False
     return True
-

@@ -1,4 +1,4 @@
-import { getApi } from './client'
+import { getApi, postApi } from './client'
 
 export interface FntvCapabilities {
   [key: string]: boolean
@@ -25,9 +25,16 @@ export interface RequiredTablesStatus {
 export interface DatabaseStatus {
   fntv: {
     ok: boolean
-    exists: boolean
-    readonly: boolean
-    path: string
+    source_path_container: string
+    source_exists: boolean
+    source_readable: boolean
+    source_readonly_configured: boolean
+    source_direct_ok: boolean | null
+    snapshot_path_container: string
+    snapshot_exists: boolean
+    snapshot_last_refresh_at: number | null
+    snapshot_ok: boolean
+    snapshot_error: string | null
     error?: string | null
     error_type?: string | null
     error_message?: string | null
@@ -54,3 +61,6 @@ export function fetchDatabaseStatus() {
   return getApi<DatabaseStatus>('/system/database-status')
 }
 
+export function refreshSnapshot() {
+  return postApi<{ ok: boolean; snapshot_path?: string; error?: string }>('/system/refresh-snapshot')
+}

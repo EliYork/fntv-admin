@@ -9,32 +9,76 @@
     </div>
 
     <div class="table-panel section">
-      <div class="panel-title">数据库状态</div>
+      <div class="panel-title">数据源</div>
       <el-descriptions v-if="status" :column="1" border>
-        <el-descriptions-item label="飞牛数据库">{{ status.fntv.ok ? '正常' : '异常' }}</el-descriptions-item>
-        <el-descriptions-item label="只读连接">{{ status.fntv.readonly ? '是' : '否' }}</el-descriptions-item>
-        <el-descriptions-item label="admin.db">{{ status.admin.exists ? '已初始化' : '未创建' }}</el-descriptions-item>
+        <el-descriptions-item label="源数据库路径">{{ status.fntv.source_path_container }}</el-descriptions-item>
+        <el-descriptions-item label="源数据库存在">{{ status.fntv.source_exists ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="源数据库可读">{{ status.fntv.source_readable ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="只读配置">{{ status.fntv.source_readonly_configured ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="源库直读">{{ sourceDirectLabel }}</el-descriptions-item>
+      </el-descriptions>
+      <EmptyState v-else description="正在等待数据库状态" />
+    </div>
+
+    <div v-if="status" class="table-panel section">
+      <div class="panel-title">快照</div>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="快照路径">{{ status.fntv.snapshot_path_container }}</el-descriptions-item>
+        <el-descriptions-item label="快照存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="快照状态">
+          <el-tag :type="status.fntv.snapshot_ok ? 'success' : 'danger'" size="small">
+            {{ status.fntv.snapshot_ok ? '正常' : '异常' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="最近刷新">{{ snapshotRefreshLabel }}</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.snapshot_error" label="快照错误">{{ status.fntv.snapshot_error }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="sub-section">
+        <el-button type="primary" size="small" :loading="refreshing" @click="doRefresh">刷新快照</el-button>
+      </div>
+    </div>
+
+    <div v-if="status" class="table-panel section">
+      <div class="panel-title">诊断结果</div>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="schema 探测">
+          <el-tag :type="status.fntv.ok ? 'success' : 'danger'" size="small">
+            {{ status.fntv.ok ? '成功' : '失败' }}
+          </el-tag>
+        </el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.error" label="错误代码">{{ status.fntv.error }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.error_type" label="错误类型">{{ status.fntv.error_type }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.error_message" label="错误描述">{{ status.fntv.error_message }}</el-descriptions-item>
+        <el-descriptions-item label="admin.db">{{ status.admin.exists ? '已初始化' : '未创建' }}</el-descriptions-item>
       </el-descriptions>
-      <EmptyState v-else description="正在等待数据库状态" />
 
       <el-alert
-        v-if="status && status.fntv.readonly && !status.fntv.ok"
+        v-if="status.fntv.source_direct_ok === false && status.fntv.snapshot_ok && status.fntv.ok"
         type="warning"
         show-icon
         :closable="false"
         style="margin-top: 12px"
       >
         <template #title>
-          数据库已成功只读打开，挂载大概率正常。当前问题是飞牛数据库表结构与适配器不完全匹配。
+          源库直读失败，但快照读取成功。这通常是因为飞牛数据库处于 WAL 模式或目录权限限制，不影响正常使用。
+        </template>
+      </el-alert>
+
+      <el-alert
+        v-if="status.fntv.source_direct_ok === false && !status.fntv.snapshot_ok"
+        type="error"
+        show-icon
+        :closable="false"
+        style="margin-top: 12px"
+      >
+        <template #title>
+          源库直读失败，快照也不可用。请检查挂载路径和权限，或尝试手动刷新快照。
         </template>
       </el-alert>
     </div>
 
     <div v-if="status && status.fntv.ok" class="table-panel section">
-      <div class="panel-title">飞牛数据库诊断</div>
+      <div class="panel-title">飞牛数据库表结构</div>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="检测到的表数量">{{ status.fntv.detected_table_count ?? 0 }}</el-descriptions-item>
         <el-descriptions-item label="用户表">{{ status.fntv.core_candidates?.user_table ?? '未识别' }}</el-descriptions-item>
@@ -97,8 +141,8 @@
       </div>
     </div>
 
-    <div v-if="status && !status.fntv.ok && status.fntv.readonly" class="table-panel section">
-      <div class="panel-title">飞牛数据库诊断</div>
+    <div v-if="status && !status.fntv.ok" class="table-panel section">
+      <div class="panel-title">飞牛数据库表结构</div>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="检测到的表数量">{{ status.fntv.detected_table_count ?? 0 }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.error_type" label="错误类型">{{ status.fntv.error_type }}</el-descriptions-item>
@@ -125,18 +169,28 @@
         </el-radio-group>
       </div>
     </div>
+
+    <el-dialog v-model="copyDialogVisible" title="手动复制诊断信息" width="560px">
+      <el-input v-model="copyText" type="textarea" :rows="16" readonly />
+      <template #footer>
+        <el-button @click="copyDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { fetchDatabaseStatus, type DatabaseStatus } from '../api/system'
+import { fetchDatabaseStatus, refreshSnapshot, type DatabaseStatus } from '../api/system'
 import EmptyState from '../components/EmptyState.vue'
 
 const status = ref<DatabaseStatus | null>(null)
 const theme = ref('system')
+const refreshing = ref(false)
+const copyDialogVisible = ref(false)
+const copyText = ref('')
 
 const capabilityLabels: Record<string, string> = {
   can_read_users: '读取用户列表',
@@ -147,6 +201,20 @@ const capabilityLabels: Record<string, string> = {
   can_calculate_progress: '计算播放进度',
 }
 
+const sourceDirectLabel = computed(() => {
+  if (!status.value) return '-'
+  const v = status.value.fntv.source_direct_ok
+  if (v === null) return '未检测'
+  return v ? '成功' : '失败（使用快照）'
+})
+
+const snapshotRefreshLabel = computed(() => {
+  if (!status.value) return '-'
+  const ts = status.value.fntv.snapshot_last_refresh_at
+  if (!ts) return '未刷新'
+  return new Date(ts * 1000).toLocaleString()
+})
+
 function hasCapability(key: string): boolean {
   return !!status.value?.fntv.capabilities?.[key]
 }
@@ -155,13 +223,35 @@ async function loadStatus() {
   status.value = await fetchDatabaseStatus()
 }
 
-function copyDiagnostics() {
-  if (!status.value) return
+async function doRefresh() {
+  refreshing.value = true
+  try {
+    const result = await refreshSnapshot()
+    if (result.ok) {
+      ElMessage.success('快照刷新成功')
+    } else {
+      ElMessage.error(`快照刷新失败: ${result.error}`)
+    }
+  } catch {
+    ElMessage.error('快照刷新请求失败')
+  } finally {
+    refreshing.value = false
+    await loadStatus()
+  }
+}
+
+function buildDiagnosticsJson(): string {
+  if (!status.value) return '{}'
   const diag = {
     fntv: {
       ok: status.value.fntv.ok,
-      exists: status.value.fntv.exists,
-      readonly: status.value.fntv.readonly,
+      source_exists: status.value.fntv.source_exists,
+      source_readable: status.value.fntv.source_readable,
+      source_direct_ok: status.value.fntv.source_direct_ok,
+      snapshot_exists: status.value.fntv.snapshot_exists,
+      snapshot_ok: status.value.fntv.snapshot_ok,
+      snapshot_error: status.value.fntv.snapshot_error ?? null,
+      snapshot_last_refresh_at: status.value.fntv.snapshot_last_refresh_at,
       error: status.value.fntv.error ?? null,
       error_type: status.value.fntv.error_type ?? null,
       error_message: status.value.fntv.error_message ?? null,
@@ -177,11 +267,22 @@ function copyDiagnostics() {
       ok: status.value.admin.ok,
     },
   }
-  navigator.clipboard.writeText(JSON.stringify(diag, null, 2)).then(() => {
-    ElMessage.success('诊断信息已复制到剪贴板')
-  }).catch(() => {
-    ElMessage.error('复制失败，请手动选择复制')
-  })
+  return JSON.stringify(diag, null, 2)
+}
+
+function copyDiagnostics() {
+  const text = buildDiagnosticsJson()
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('诊断信息已复制到剪贴板')
+    }).catch(() => {
+      copyText.value = text
+      copyDialogVisible.value = true
+    })
+  } else {
+    copyText.value = text
+    copyDialogVisible.value = true
+  }
 }
 
 onMounted(loadStatus)

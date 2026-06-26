@@ -127,11 +127,14 @@ DOCKERHUB_TOKEN
 - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
 
+fntv-admin 使用快照机制读取飞牛数据库：启动时将源库复制到 `/data/cache/trimmedia.snapshot.db`，所有查询读取快照库。这样可以避免 SQLite WAL 模式、锁、目录权限等问题。源库始终保持只读，不会被修改。
+
 如果数据库状态异常，优先检查：
 
 1. `/usr/local/apps/@appdata/fntv-admin/data` 是否读写挂载到 `/data`。
 2. `/usr/local/apps/@appdata/trim.media/database` 是否只读挂载到 `/fntv`。
 3. `FNTV_DB_PATH` 是否仍为 `/fntv/trimmedia.db`。
+4. 系统设置页查看快照状态，尝试点击"刷新快照"。
 
 如果不确定路径或担心影响原始数据，可以先复制一份 `trimmedia.db` 到 `test-db` 目录，用测试副本验证页面和数据库状态。
 
