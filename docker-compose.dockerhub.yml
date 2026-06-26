@@ -1,8 +1,6 @@
 services:
   fntv-admin:
-    # Default image source: GHCR.
-    # Docker Hub fallback: docker.io/REPLACE_WITH_YOUR_DOCKERHUB_USERNAME/fntv-admin:latest
-    image: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USERNAME/fntv-admin:latest
+    image: docker.io/REPLACE_WITH_YOUR_DOCKERHUB_USERNAME/fntv-admin:latest
     container_name: fntv-admin
     restart: unless-stopped
     ports:

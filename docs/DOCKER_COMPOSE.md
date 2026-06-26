@@ -2,7 +2,7 @@
 
 `docker-compose.yml` 是 `fntv-admin` 唯一官方生产部署入口。
 
-飞牛 NAS 推荐使用 GHCR 成品镜像，不推荐在飞牛本机 build。默认 `docker-compose.yml` 使用 `image` 拉取镜像。
+飞牛 NAS 默认推荐使用 GHCR 成品镜像，不推荐在飞牛本机 build。默认 `docker-compose.yml` 使用 GHCR `image` 拉取镜像。Docker Hub 仅作为 GHCR 下载较慢时的备用镜像源。
 
 ## 启动
 
@@ -33,10 +33,40 @@ volumes:
 默认镜像地址格式：
 
 ```text
-ghcr.io/<GitHub 用户名或组织名>/fntv-admin:latest
+ghcr.io/<GitHub用户名>/fntv-admin:latest
 ```
 
 使用前把 `docker-compose.yml` 中的 `REPLACE_WITH_YOUR_GITHUB_USERNAME` 替换为自己的 GitHub 用户名或组织名。
+
+备用 Docker Hub 镜像地址格式：
+
+```text
+docker.io/<DockerHub用户名>/fntv-admin:latest
+```
+
+如果 GHCR 下载较慢，可以使用 `docker-compose.dockerhub.yml`：
+
+```bash
+docker compose -f docker-compose.dockerhub.yml up -d
+```
+
+使用前把 `docker-compose.dockerhub.yml` 中的 `REPLACE_WITH_YOUR_DOCKERHUB_USERNAME` 替换为自己的 Docker Hub 用户名。
+
+两个 compose 文件的挂载规则保持一致：
+
+```text
+/usr/local/apps/@appdata/fntv-admin/data -> /data 读写
+/usr/local/apps/@appdata/trim.media/database -> /fntv 只读
+```
+
+发布 Docker Hub 备用镜像需要在 GitHub Secrets 中配置：
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+`DOCKERHUB_TOKEN` 应使用 Docker Hub access token，不要使用 Docker Hub 明文密码。未配置时 GHCR 镜像发布不受影响。
 
 ## 单容器生产模型
 

@@ -8,3 +8,4 @@
 - 增加登录权限、仪表盘、观看历史、用户管理、媒体库基础能力。
 - 增加 GitHub Actions 自动构建并推送 GHCR 镜像。
 - 默认 Docker Compose 部署改为拉取 GHCR 成品镜像，保留开发者本地构建 compose。
+- 增加 Docker Hub 备用镜像发布和 `docker-compose.dockerhub.yml` 部署文件，GHCR 仍为默认镜像源。

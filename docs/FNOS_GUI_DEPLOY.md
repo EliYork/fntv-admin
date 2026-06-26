@@ -1,24 +1,31 @@
 # 飞牛可视化部署
 
-飞牛 NAS 推荐使用 GHCR 成品镜像部署 `fntv-admin`，不要在飞牛本机 build 镜像。
+飞牛 NAS 默认推荐使用 GHCR 成品镜像部署 `fntv-admin`，不要在飞牛本机 build 镜像。若 GHCR 下载较慢，可以切换到 Docker Hub 备用镜像。
 
 原因：
 
 - 飞牛本机构建时可能需要拉取 `docker.io/library/node:22-alpine` 和 `docker.io/library/python:3.12-slim`。
 - 这些基础镜像在部分网络环境下容易超时。
 - GitHub Actions 可以在云端完成多阶段构建，并把最终单容器镜像推送到 GHCR。
+- 配置 Docker Hub secrets 后，同一 workflow 也会发布 Docker Hub 备用镜像。
 
 ## 部署方式 A：导入 Compose / 项目 / 应用栈
 
 在飞牛 Docker 可视化界面中选择 Compose、项目或应用栈导入，把项目的 `docker-compose.yml` 内容粘贴进去。
 
-部署前必须修改：
+默认部署前必须修改 GHCR 镜像名：
 
 ```yaml
-image: ghcr.io/<用户名>/fntv-admin:latest
+image: ghcr.io/<GitHub用户名>/fntv-admin:latest
 ```
 
-把 `<用户名>` 改成 GitHub 用户名或组织名。
+把 `<GitHub用户名>` 改成 GitHub 用户名或组织名。
+
+如果 GHCR 下载慢，可以改用 `docker-compose.dockerhub.yml`，并修改 Docker Hub 镜像名：
+
+```yaml
+image: docker.io/<DockerHub用户名>/fntv-admin:latest
+```
 
 端口：
 
@@ -68,7 +75,13 @@ http://飞牛IP:8080
 在飞牛 Docker 镜像页面拉取：
 
 ```text
-ghcr.io/<用户名>/fntv-admin:latest
+ghcr.io/<GitHub用户名>/fntv-admin:latest
+```
+
+如果 GHCR 下载慢，可以改拉 Docker Hub 备用镜像：
+
+```text
+docker.io/<DockerHub用户名>/fntv-admin:latest
 ```
 
 然后创建容器：
@@ -89,7 +102,20 @@ ghcr.io/<用户名>/fntv-admin:latest
 2. 飞牛 NAS 是否能访问 `ghcr.io`。
 3. 如果 package 是 private，需要在飞牛 Docker 中登录 GHCR。
 
-本项目不需要 Docker Hub secrets，也不要求飞牛本机 build。
+如果 GHCR 在当前网络下下载较慢，可以使用 Docker Hub 备用镜像：
+
+```text
+docker.io/<DockerHub用户名>/fntv-admin:latest
+```
+
+发布 Docker Hub 镜像需要在 GitHub Secrets 中配置：
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+`DOCKERHUB_TOKEN` 应使用 Docker Hub access token，不要使用 Docker Hub 明文密码。未配置这两个 secrets 时，GHCR 发布仍会正常运行，只是 Docker Hub 发布步骤会跳过。
 
 ## 数据库安全提醒
 

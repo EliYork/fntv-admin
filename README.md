@@ -2,12 +2,13 @@
 
 `fntv-admin` 是从零开发的飞牛影视增强管理后台。项目官方只支持 Docker Compose 部署，生产环境优先使用一个容器运行 FastAPI 后端和 Vue 构建后的静态前端。
 
-飞牛 NAS 推荐直接拉取 GitHub Container Registry（GHCR）成品镜像运行，不推荐在飞牛本机 build 镜像。这样可以避开飞牛本机拉取 `node:22-alpine`、`python:3.12-slim` 等构建基础镜像超时的问题。
+飞牛 NAS 默认推荐直接拉取 GitHub Container Registry（GHCR）成品镜像运行，不推荐在飞牛本机 build 镜像。若 GHCR 在当前网络下下载较慢，可以切换到 Docker Hub 备用镜像。
 
 核心边界：
 
 - Docker Compose 是唯一官方部署入口。
 - 默认部署使用 GHCR 成品镜像。
+- Docker Hub 仅作为备用镜像源。
 - 飞牛影视数据库只读挂载到 `/fntv/trimmedia.db`。
 - 所有增强数据写入 `/data/admin.db`。
 - 所有可变数据都保存在 `/data`。
@@ -40,6 +41,12 @@ services:
       BACKUP_DIR: /data/backup
       DEFAULT_PAGE_SIZE: "20"
       LOG_RETENTION_DAYS: "14"
+```
+
+如果 GHCR 下载较慢，可以改用 `docker-compose.dockerhub.yml`，并把 `REPLACE_WITH_YOUR_DOCKERHUB_USERNAME` 改成 Docker Hub 用户名：
+
+```yaml
+image: docker.io/REPLACE_WITH_YOUR_DOCKERHUB_USERNAME/fntv-admin:latest
 ```
 
 3. 检查挂载路径：
@@ -82,12 +89,37 @@ GitHub Actions 会在以下场景构建并推送镜像到 GHCR：
 镜像名格式：
 
 ```text
-ghcr.io/<GitHub 用户名或组织名>/fntv-admin:latest
-ghcr.io/<GitHub 用户名或组织名>/fntv-admin:sha-<git-sha>
-ghcr.io/<GitHub 用户名或组织名>/fntv-admin:<tag>
+ghcr.io/<GitHub用户名>/fntv-admin:latest
+ghcr.io/<GitHub用户名>/fntv-admin:sha-<git-sha>
+ghcr.io/<GitHub用户名>/fntv-admin:<tag>
 ```
 
 如果仓库默认分支不是 `main`，需要在 `.github/workflows/docker-image.yml` 中把触发分支改成实际默认分支。
+
+## Docker Hub 备用镜像
+
+GHCR 仍然是默认镜像源。Docker Hub 只作为 GHCR 下载较慢时的备用镜像源：
+
+```text
+docker.io/<DockerHub用户名>/fntv-admin:latest
+docker.io/<DockerHub用户名>/fntv-admin:sha-<git-sha>
+docker.io/<DockerHub用户名>/fntv-admin:<tag>
+```
+
+如需让 GitHub Actions 同步发布 Docker Hub 镜像，请在仓库的 GitHub Secrets 中配置：
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+`DOCKERHUB_TOKEN` 应使用 Docker Hub access token，不要使用 Docker Hub 明文密码。未配置这两个 secrets 时，workflow 只发布 GHCR 镜像，Docker Hub 步骤会跳过。
+
+飞牛 NAS 上如果 GHCR 下载慢，可以导入 `docker-compose.dockerhub.yml`，并把镜像名改成：
+
+```text
+docker.io/<DockerHub用户名>/fntv-admin:latest
+```
 
 ## 数据持久化
 
@@ -141,7 +173,7 @@ docker compose -f docker-compose.build.yml up -d
 - Docker Compose-first 项目结构。
 - FastAPI 后端与 Vue 前端。
 - 单容器生产 Dockerfile。
-- GHCR 自动构建发布 workflow。
+- GHCR 自动构建发布 workflow，Docker Hub 作为可选备用发布目标。
 - 启动检查、健康检查、数据库状态。
 - 首次管理员初始化、登录、退出、当前用户、修改密码。
 - 仪表盘、观看历史、用户管理、媒体库基础 API 与页面。

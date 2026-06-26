@@ -71,9 +71,19 @@ frontend/
 ghcr.io/<GitHub 用户或组织>/fntv-admin:latest
 ```
 
+Docker Hub 只能作为备用镜像源，用于 GHCR 在飞牛 NAS 上下载较慢的场景：
+
+```text
+docker.io/<DockerHub 用户>/fntv-admin:latest
+```
+
+不要把默认镜像源改成 Docker Hub，不要移除 GHCR 发布。
+
 飞牛 NAS 不要求本机构建镜像。
 
 `docker-compose.yml` 默认使用 `image`。
+
+`docker-compose.dockerhub.yml` 仅作为 Docker Hub 备用镜像部署文件，挂载和环境变量必须与默认 Compose 保持一致。
 
 `docker-compose.build.yml` 仅用于开发者本地构建和测试。
 
@@ -447,6 +457,14 @@ volumes:
 ```
 
 默认 `docker-compose.yml` 应拉取 GHCR 成品镜像，不默认执行本地构建。
+
+如果 GHCR 下载较慢，可以使用 Docker Hub 备用 compose：
+
+```bash
+docker compose -f docker-compose.dockerhub.yml up -d
+```
+
+以上仍属于 Docker Compose 部署，不是新的官方部署方式。Docker Hub 发布需要 GitHub Secrets `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`，其中 token 必须使用 Docker Hub access token，不要使用明文密码。
 
 开发者本地构建必须使用：
 
