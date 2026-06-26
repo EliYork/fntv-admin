@@ -1,0 +1,59 @@
+<template>
+  <section>
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">用户管理</h1>
+        <p class="page-subtitle">用户展示增强信息写入 admin.db，不修改飞牛用户表</p>
+      </div>
+      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
+    </div>
+    <div class="toolbar">
+      <el-input v-model="keyword" placeholder="搜索用户名" style="width: 260px" clearable @keyup.enter="loadData" />
+      <el-switch v-model="showHidden" active-text="显示隐藏用户" />
+    </div>
+    <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
+    <div class="table-panel">
+      <el-table v-if="pageData?.items.length" :data="pageData.items">
+        <el-table-column prop="username" label="用户名" min-width="160" />
+        <el-table-column prop="guid" label="GUID" min-width="220" />
+        <el-table-column prop="play_count" label="播放次数" width="110" />
+        <el-table-column prop="last_play_at" label="最近播放" min-width="150" />
+        <el-table-column prop="note" label="备注" min-width="180" />
+        <el-table-column label="操作" width="120">
+          <template #default="{ row }">
+            <el-button size="small" text @click="toggleHidden(row.guid, !row.hidden)">
+              {{ row.hidden ? '恢复' : '隐藏' }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <EmptyState v-else description="暂无用户数据或未识别用户表" />
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { fetchUsers, hideUser, type UserItem } from '../api/modules'
+import type { PageData } from '../types/api'
+import EmptyState from '../components/EmptyState.vue'
+
+const keyword = ref('')
+const showHidden = ref(false)
+const pageData = ref<PageData<UserItem> | null>(null)
+
+async function loadData() {
+  pageData.value = await fetchUsers({ page: 1, page_size: 20, keyword: keyword.value, show_hidden: showHidden.value })
+}
+
+async function toggleHidden(guid: string, hidden: boolean) {
+  await hideUser(guid, hidden)
+  ElMessage.success(hidden ? '已隐藏用户' : '已恢复用户')
+  await loadData()
+}
+
+onMounted(loadData)
+</script>
+
