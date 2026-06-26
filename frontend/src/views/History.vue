@@ -8,8 +8,8 @@
       <el-button :icon="Download" :loading="exporting" @click="exportCsv">导出 CSV</el-button>
     </div>
     <div class="toolbar">
-      <el-input v-model="keyword" placeholder="搜索标题" style="width: 260px" clearable @keyup.enter="loadData" />
-      <el-button :icon="Search" type="primary" @click="loadData">筛选</el-button>
+      <el-input v-model="keyword" placeholder="搜索标题或用户" style="width: 260px" clearable @clear="applyFilters" @keyup.enter="applyFilters" />
+      <el-button :icon="Search" type="primary" :loading="loading" @click="applyFilters">筛选</el-button>
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
     <div class="table-panel">
@@ -22,6 +22,15 @@
         <el-table-column prop="resolution" label="分辨率" width="110" />
       </el-table>
       <EmptyState v-else description="暂无观看历史或未识别播放记录表" />
+      <PaginationFooter
+        v-if="pageData"
+        :page="page"
+        :page-size="pageSize"
+        :total="pageData.total"
+        :disabled="loading"
+        @page-change="handlePageChange"
+        @page-size-change="handlePageSizeChange"
+      />
     </div>
   </section>
 </template>
@@ -32,8 +41,11 @@ import { Download, Search } from '@element-plus/icons-vue'
 import { downloadHistoryCsv, fetchHistory, type HistoryItem } from '../api/modules'
 import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
+import PaginationFooter from '../components/PaginationFooter.vue'
 
 const keyword = ref('')
+const page = ref(1)
+const pageSize = ref(20)
 const pageData = ref<PageData<HistoryItem> | null>(null)
 const loading = ref(false)
 const exporting = ref(false)
@@ -41,16 +53,34 @@ const exporting = ref(false)
 async function loadData() {
   loading.value = true
   try {
-    pageData.value = await fetchHistory({ page: 1, page_size: 20, keyword: keyword.value })
+    pageData.value = await fetchHistory({ page: page.value, page_size: pageSize.value, keyword: keyword.value })
+    page.value = pageData.value.page
+    pageSize.value = pageData.value.page_size
   } finally {
     loading.value = false
   }
 }
 
+async function applyFilters() {
+  page.value = 1
+  await loadData()
+}
+
+async function handlePageChange(value: number) {
+  page.value = value
+  await loadData()
+}
+
+async function handlePageSizeChange(value: number) {
+  pageSize.value = value
+  page.value = 1
+  await loadData()
+}
+
 async function exportCsv() {
   exporting.value = true
   try {
-    const blob = await downloadHistoryCsv()
+    const blob = await downloadHistoryCsv({ keyword: keyword.value })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

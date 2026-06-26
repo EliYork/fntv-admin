@@ -66,16 +66,16 @@ export function fetchDashboardOverview() {
   return getApi<DashboardOverview>('/dashboard/overview')
 }
 
-export function fetchRecentActivities() {
-  return getApi<HistoryItem[]>('/dashboard/recent-activities')
+export function fetchRecentActivities(limit = 10) {
+  return getApi<HistoryItem[]>('/dashboard/recent-activities', { limit })
 }
 
 export function fetchHistory(params: Record<string, unknown>) {
   return getApi<PageData<HistoryItem>>('/history', params)
 }
 
-export async function downloadHistoryCsv() {
-  const response = await apiClient.get('/history/export', { responseType: 'blob' })
+export async function downloadHistoryCsv(params?: Record<string, unknown>) {
+  const response = await apiClient.get('/history/export', { params, responseType: 'blob' })
   return response.data as Blob
 }
 
@@ -101,4 +101,27 @@ export function updateMediaProfile(guid: string, data: { display_title?: string;
 
 export function hideMedia(guid: string, hidden: boolean) {
   return postApi(`/media/${encodeURIComponent(guid)}/${hidden ? 'hide' : 'unhide'}`)
+}
+
+export interface LogItem {
+  id?: string | number
+  level?: string
+  message?: string
+  created_at?: string | number | null
+}
+
+export interface TaskItem {
+  id?: string | number
+  task_type?: string
+  status?: string
+  message?: string
+  started_at?: string | number | null
+}
+
+export function fetchLogs(params: Record<string, unknown>) {
+  return getApi<PageData<LogItem>>('/logs', params)
+}
+
+export function fetchTasks(params: Record<string, unknown>) {
+  return getApi<PageData<TaskItem>>('/tasks', params)
 }

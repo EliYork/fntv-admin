@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_current_admin
 from app.core.response import ok
@@ -15,8 +15,8 @@ def overview():
 
 
 @router.get("/recent-activities")
-def recent_activities():
-    return ok(fntv_adapter.recent_activities())
+def recent_activities(limit: int = Query(default=10, ge=1, le=20)):
+    return ok(fntv_adapter.recent_activities(limit=limit))
 
 
 @router.get("/play-trend")
@@ -37,4 +37,3 @@ def top_users():
 @router.get("/system-status")
 def dashboard_system_status():
     return ok({"database": system_service.database_status(), "storage": system_service.storage_status()})
-

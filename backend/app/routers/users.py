@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/users", tags=["users"], dependencies=[Depends(ge
 @router.get("")
 def list_users(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=200),
+    page_size: int = Query(default=20, ge=1),
     keyword: str | None = None,
     show_hidden: bool = False,
     db: Session = Depends(get_session),
@@ -30,7 +30,7 @@ def user_detail(guid: str, db: Session = Depends(get_session)):
 
 
 @router.get("/{guid}/history")
-def user_history(guid: str, page: int = 1, page_size: int = 20):
+def user_history(guid: str, page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1)):
     return ok(fntv_adapter.user_history(guid, page, page_size))
 
 

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/history", tags=["history"], dependencies=[Depend
 @router.get("")
 def list_history(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=200),
+    page_size: int = Query(default=20, ge=1),
     user_guid: str | None = None,
     keyword: str | None = None,
     media_type: str | None = None,

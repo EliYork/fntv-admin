@@ -8,8 +8,9 @@
       <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
     </div>
     <div class="toolbar">
-      <el-input v-model="keyword" placeholder="搜索用户名" style="width: 260px" clearable @keyup.enter="loadData" />
-      <el-switch v-model="showHidden" active-text="显示隐藏用户" />
+      <el-input v-model="keyword" placeholder="搜索用户名" style="width: 260px" clearable @clear="applyFilters" @keyup.enter="applyFilters" />
+      <el-button :icon="Search" type="primary" :loading="loading" @click="applyFilters">搜索</el-button>
+      <el-switch v-model="showHidden" active-text="显示隐藏用户" @change="applyFilters" />
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
     <div class="table-panel">
@@ -34,35 +35,66 @@
         </el-table-column>
       </el-table>
       <EmptyState v-else description="暂无用户数据或未识别用户表" />
+      <PaginationFooter
+        v-if="pageData"
+        :page="page"
+        :page-size="pageSize"
+        :total="pageData.total"
+        :disabled="loading"
+        @page-change="handlePageChange"
+        @page-size-change="handlePageSizeChange"
+      />
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchUsers, hideUser, type UserItem } from '../api/modules'
 import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
+import PaginationFooter from '../components/PaginationFooter.vue'
 
 const keyword = ref('')
 const showHidden = ref(false)
+const page = ref(1)
+const pageSize = ref(20)
 const pageData = ref<PageData<UserItem> | null>(null)
 const loading = ref(false)
 
 async function loadData() {
   loading.value = true
   try {
-    pageData.value = await fetchUsers({ page: 1, page_size: 20, keyword: keyword.value, show_hidden: showHidden.value })
+    pageData.value = await fetchUsers({ page: page.value, page_size: pageSize.value, keyword: keyword.value, show_hidden: showHidden.value })
+    page.value = pageData.value.page
+    pageSize.value = pageData.value.page_size
   } finally {
     loading.value = false
   }
 }
 
+async function applyFilters() {
+  page.value = 1
+  await loadData()
+}
+
+async function handlePageChange(value: number) {
+  page.value = value
+  await loadData()
+}
+
+async function handlePageSizeChange(value: number) {
+  pageSize.value = value
+  page.value = 1
+  await loadData()
+}
+
 async function toggleHidden(guid: string, hidden: boolean) {
   await hideUser(guid, hidden)
   ElMessage.success(hidden ? '已隐藏用户' : '已恢复用户')
+  page.value = 1
   await loadData()
 }
 

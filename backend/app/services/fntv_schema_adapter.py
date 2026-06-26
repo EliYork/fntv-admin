@@ -294,13 +294,12 @@ def users_page(page: int, page_size: int, db: Session | None = None, keyword: st
         if not schema.users.table:
             return _empty_page(page, page_size, capabilities=schema.capabilities)
         page_num, clean_page_size, _ = normalize_page(page, page_size)
+        profiles = _user_profiles(db)
+        hidden_guids = set() if show_hidden else {guid for guid, profile in profiles.items() if profile.hidden}
         with open_fntv_connection() as conn:
-            rows, total = _entity_rows(conn, schema.users, schema, keyword, page_num, clean_page_size, "user")
-            profiles = _user_profiles(db)
+            rows, total = _entity_rows(conn, schema.users, schema, keyword, page_num, clean_page_size, "user", exclude_guids=hidden_guids)
             stats = _user_stats_for(conn, schema, [_row_value(row, schema.users.fields.get("guid")) for row in rows])
             items = [_user_row(row, schema, profiles, stats) for row in rows]
-        if not show_hidden:
-            items = [item for item in items if not item["hidden"]]
         pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
         return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capabilities": schema.capabilities}
     except AppError as exc:
@@ -335,15 +334,14 @@ def media_page(page: int, page_size: int, db: Session | None = None, keyword: st
         if not schema.items.table:
             return _empty_page(page, page_size, capabilities=schema.capabilities)
         page_num, clean_page_size, _ = normalize_page(page, page_size)
+        profiles = _media_profiles(db)
+        hidden_guids = set() if show_hidden else {guid for guid, profile in profiles.items() if profile.hidden}
         with open_fntv_connection() as conn:
-            rows, total = _entity_rows(conn, schema.items, schema, keyword, page_num, clean_page_size, "media", media_type)
-            profiles = _media_profiles(db)
+            rows, total = _entity_rows(conn, schema.items, schema, keyword, page_num, clean_page_size, "media", media_type, hidden_guids)
             stats = _media_stats_for(conn, schema, [_row_value(row, schema.items.fields.get("guid")) for row in rows])
             parent_titles = _parent_titles(conn, schema, rows)
             children_counts = _children_counts(conn, schema, [_row_value(row, schema.items.fields.get("guid")) for row in rows])
             items = [_media_row(row, schema, profiles, stats, parent_titles, children_counts) for row in rows]
-        if not show_hidden:
-            items = [item for item in items if not item["hidden"]]
         pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
         return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capabilities": schema.capabilities}
     except AppError as exc:
@@ -516,8 +514,25 @@ def _play_rows(conn: sqlite3.Connection, schema: FntvSchemaInfo, page: int, page
 def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[str], list[Any], str]:
     where: list[str] = []
     params: list[Any] = []
-    joins = ""
+    joins: list[str] = []
     fields = schema.plays.fields
+    joined_items = False
+    joined_users = False
+
+    def ensure_item_join() -> None:
+        nonlocal joined_items
+        if joined_items or not schema.items.table or not fields.get("item_guid") or not schema.items.fields.get("guid"):
+            return
+        joins.append(f"LEFT JOIN {quote_identifier(schema.items.table)} i ON p.{quote_identifier(fields['item_guid'])} = i.{quote_identifier(schema.items.fields['guid'])}")
+        joined_items = True
+
+    def ensure_user_join() -> None:
+        nonlocal joined_users
+        if joined_users or not schema.users.table or not fields.get("user_guid") or not schema.users.fields.get("guid"):
+            return
+        joins.append(f"LEFT JOIN {quote_identifier(schema.users.table)} u ON p.{quote_identifier(fields['user_guid'])} = u.{quote_identifier(schema.users.fields['guid'])}")
+        joined_users = True
+
     visible = _visible_clause(schema, "p")
     if visible:
         where.append(visible)
@@ -539,9 +554,15 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
     if filters.get("progress_max") is not None and fields.get("position"):
         where.append(f"p.{quote_identifier(fields['position'])} <= ?")
         params.append(filters["progress_max"])
-    if filters.get("media_type") and fields.get("type"):
-        where.append(f"p.{quote_identifier(fields['type'])} = ?")
-        params.append(filters["media_type"])
+    if filters.get("media_type"):
+        if fields.get("type"):
+            where.append(f"LOWER(p.{quote_identifier(fields['type'])}) = LOWER(?)")
+            params.append(filters["media_type"])
+        elif schema.items.fields.get("media_type"):
+            ensure_item_join()
+            if joined_items:
+                where.append(f"LOWER(i.{quote_identifier(schema.items.fields['media_type'])}) = LOWER(?)")
+                params.append(filters["media_type"])
     time_expr = _play_time_expr(schema, "p")
     if filters.get("start_time") and time_expr:
         start = _parse_datetime_to_seconds(filters["start_time"])
@@ -554,8 +575,8 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
             where.append(f"{time_expr} <= ?")
             params.append(end)
     keyword = (filters.get("keyword") or "").strip()
-    if keyword and schema.items.table and fields.get("item_guid") and schema.items.fields.get("guid"):
-        joins = f"LEFT JOIN {quote_identifier(schema.items.table)} i ON p.{quote_identifier(fields['item_guid'])} = i.{quote_identifier(schema.items.fields['guid'])}"
+    if keyword:
+        keyword_where: list[str] = []
         title_columns = [
             schema.items.fields.get("title"),
             schema.items.fields.get("original_title"),
@@ -563,9 +584,23 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
         ]
         title_columns = [col for col in dict.fromkeys(title_columns) if col]
         if title_columns:
-            where.append("(" + " OR ".join(f"i.{quote_identifier(col)} LIKE ?" for col in title_columns) + ")")
-            params.extend([f"%{keyword}%"] * len(title_columns))
-    return where, params, joins
+            ensure_item_join()
+            if joined_items:
+                keyword_where.extend(f"i.{quote_identifier(col)} LIKE ?" for col in title_columns)
+                params.extend([f"%{keyword}%"] * len(title_columns))
+        user_columns = [
+            schema.users.fields.get("username"),
+            _find_column(schema, schema.users.table, ("nickname", "name", "display_name")),
+        ]
+        user_columns = [col for col in dict.fromkeys(user_columns) if col]
+        if user_columns:
+            ensure_user_join()
+            if joined_users:
+                keyword_where.extend(f"u.{quote_identifier(col)} LIKE ?" for col in user_columns)
+                params.extend([f"%{keyword}%"] * len(user_columns))
+        if keyword_where:
+            where.append("(" + " OR ".join(keyword_where) + ")")
+    return where, params, " ".join(joins)
 
 
 def _hydrate_play_rows(conn: sqlite3.Connection, schema: FntvSchemaInfo, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -630,7 +665,17 @@ def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict
     }
 
 
-def _entity_rows(conn: sqlite3.Connection, fmap: FntvFieldMap, schema: FntvSchemaInfo, keyword: str | None, page: int, page_size: int, kind: str, media_type: str | None = None) -> tuple[list[dict[str, Any]], int]:
+def _entity_rows(
+    conn: sqlite3.Connection,
+    fmap: FntvFieldMap,
+    schema: FntvSchemaInfo,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+    kind: str,
+    media_type: str | None = None,
+    exclude_guids: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     if not fmap.table:
         return [], 0
     _, clean_page_size, offset = normalize_page(page, page_size)
@@ -644,8 +689,15 @@ def _entity_rows(conn: sqlite3.Connection, fmap: FntvFieldMap, schema: FntvSchem
             params.extend([f"%{keyword}%"] * len(cols))
     type_col = fmap.fields.get("media_type")
     if kind == "media" and media_type and type_col:
-        where.append(f"{quote_identifier(type_col)} = ?")
+        where.append(f"LOWER({quote_identifier(type_col)}) = LOWER(?)")
         params.append(media_type)
+    guid_col = fmap.fields.get("guid")
+    if exclude_guids and guid_col:
+        keys = sorted(str(guid) for guid in exclude_guids if guid)
+        if keys:
+            placeholders = ",".join("?" for _ in keys)
+            where.append(f"{quote_identifier(guid_col)} NOT IN ({placeholders})")
+            params.extend(keys)
     where_sql = f" WHERE {' AND '.join(where)}" if where else ""
     order_col = display_cols[0] if display_cols else fmap.fields.get("guid")
     order_sql = f" ORDER BY {quote_identifier(order_col)} ASC" if order_col else ""
@@ -915,7 +967,8 @@ def _empty_overview(error: str) -> dict[str, Any]:
 
 
 def _empty_page(page: int, page_size: int, error: str | None = None, capabilities: dict[str, bool] | None = None) -> dict[str, Any]:
-    data: dict[str, Any] = {"items": [], "page": page, "page_size": page_size, "total": 0, "pages": 0, "capabilities": capabilities or {}}
+    page_num, clean_page_size, _ = normalize_page(page, page_size)
+    data: dict[str, Any] = {"items": [], "page": page_num, "page_size": clean_page_size, "total": 0, "pages": 0, "capabilities": capabilities or {}}
     if error:
         data["error"] = error
     return data

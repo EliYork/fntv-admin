@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/media", tags=["media"], dependencies=[Depends(ge
 @router.get("")
 def list_media(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=200),
+    page_size: int = Query(default=20, ge=1),
     keyword: str | None = None,
     media_type: str | None = None,
     show_hidden: bool = False,
@@ -41,7 +41,7 @@ def children(guid: str):
 
 
 @router.get("/{guid}/history")
-def media_history(guid: str, page: int = 1, page_size: int = 20):
+def media_history(guid: str, page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1)):
     return ok(fntv_adapter.media_history(guid, page, page_size))
 
 

@@ -18,7 +18,10 @@
     </div>
 
     <div class="table-panel">
-      <div class="panel-title">最近活动</div>
+      <div class="panel-title panel-title-row">
+        <span>最近 10 条活动</span>
+        <el-button size="small" text :icon="ArrowRight" @click="router.push('/history')">查看更多</el-button>
+      </div>
       <el-table v-if="activities.length" v-loading="loading" :data="activities" height="360">
         <el-table-column label="用户" min-width="160">
           <template #default="{ row }">
@@ -42,10 +45,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { fetchDashboardOverview, fetchRecentActivities, type DashboardOverview, type HistoryItem } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
 
+const router = useRouter()
 const overview = ref<DashboardOverview | null>(null)
 const activities = ref<HistoryItem[]>([])
 const loading = ref(false)
@@ -61,7 +66,7 @@ async function loadData() {
   loading.value = true
   try {
     overview.value = await fetchDashboardOverview()
-    activities.value = await fetchRecentActivities()
+    activities.value = await fetchRecentActivities(10)
   } finally {
     loading.value = false
   }
@@ -69,3 +74,12 @@ async function loadData() {
 
 onMounted(loadData)
 </script>
+
+<style scoped>
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+</style>
