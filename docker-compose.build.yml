@@ -10,7 +10,7 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/data
-      - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+      - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
     environment:
       APP_NAME: ${APP_NAME:-fntv-admin}
       APP_ENV: ${APP_ENV:-production}

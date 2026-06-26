@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DataAnalysis, Document, Files, Film, HomeFilled, Setting, SwitchButton, User, Tickets } from '@element-plus/icons-vue'
 import { fetchDatabaseStatus } from '../api/system'
@@ -47,7 +47,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const databaseOk = ref(false)
 const refreshedAt = ref('-')
-const darkMode = ref(false)
+const darkMode = ref(localStorage.getItem('fntv_theme') === 'dark')
 const drawerVisible = ref(false)
 
 const navItems = [
@@ -80,6 +80,15 @@ async function handleLogout() {
 const asideBackground = computed(() => (darkMode.value ? '#182033' : '#ffffff'))
 
 onMounted(refreshDatabaseStatus)
+
+watch(
+  darkMode,
+  (enabled) => {
+    localStorage.setItem('fntv_theme', enabled ? 'dark' : 'light')
+    document.documentElement.dataset.theme = enabled ? 'dark' : 'light'
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -104,6 +113,7 @@ onMounted(refreshDatabaseStatus)
 
 .nav-menu {
   border-right: 0;
+  background: transparent;
 }
 
 .topbar {
@@ -134,6 +144,28 @@ onMounted(refreshDatabaseStatus)
   background: #f5f7fb;
 }
 
+:global([data-theme='dark']) .topbar,
+:global([data-theme='dark']) .admin-aside {
+  border-color: #30394d;
+  background: #182033;
+}
+
+:global([data-theme='dark']) .brand {
+  color: #8fb4ff;
+}
+
+:global([data-theme='dark']) .main-view {
+  background: #111827;
+}
+
+:global([data-theme='dark']) .nav-menu :deep(.el-menu-item) {
+  color: #d5dbea;
+}
+
+:global([data-theme='dark']) .nav-menu :deep(.el-menu-item.is-active) {
+  color: #8fb4ff;
+}
+
 @media (max-width: 760px) {
   .admin-shell {
     display: block;
@@ -152,4 +184,3 @@ onMounted(refreshDatabaseStatus)
   }
 }
 </style>
-

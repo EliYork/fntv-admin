@@ -29,15 +29,17 @@ image: ghcr.io/<用户名>/fntv-admin:latest
 挂载：
 
 ```text
-./data 或飞牛某个目录 -> /data
-trimmedia.db -> /fntv/trimmedia.db，只读
+/usr/local/apps/@appdata/fntv-admin/data -> /data，读写
+/usr/local/apps/@appdata/trim.media/database -> /fntv，只读
 ```
 
 飞牛数据库挂载必须是只读：
 
 ```yaml
-- /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+- /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
+
+`/data` 必须读写挂载，否则 `admin.db`、日志、缓存无法持久化。不要把飞牛影视数据库目录挂到 `/data`。
 
 环境变量：
 
@@ -73,8 +75,8 @@ ghcr.io/<用户名>/fntv-admin:latest
 
 - 容器端口：`8080`
 - 宿主机端口：`8080`
-- 挂载数据目录到 `/data`
-- 挂载 `trimmedia.db` 到 `/fntv/trimmedia.db`，并设置为只读
+- 挂载 `/usr/local/apps/@appdata/fntv-admin/data` 到 `/data`，读写
+- 挂载 `/usr/local/apps/@appdata/trim.media/database` 到 `/fntv`，只读
 - 设置上方环境变量
 
 这种方式适合不使用 Compose 导入的飞牛环境。长期维护仍推荐使用 Compose / 项目 / 应用栈方式。
@@ -91,12 +93,18 @@ ghcr.io/<用户名>/fntv-admin:latest
 
 ## 数据库安全提醒
 
-不要把飞牛影视数据库以读写方式挂载。
+不要把飞牛影视数据库以读写方式挂载，也不要把飞牛影视数据库目录挂到 `/data`。
 
 正确方式：
 
 ```yaml
-- /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+- /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
+
+如果数据库状态异常，优先检查：
+
+1. `/usr/local/apps/@appdata/fntv-admin/data` 是否读写挂载到 `/data`。
+2. `/usr/local/apps/@appdata/trim.media/database` 是否只读挂载到 `/fntv`。
+3. `FNTV_DB_PATH` 是否仍为 `/fntv/trimmedia.db`。
 
 如果不确定路径或担心影响原始数据，可以先复制一份 `trimmedia.db` 到 `test-db` 目录，用测试副本验证页面和数据库状态。

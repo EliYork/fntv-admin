@@ -5,7 +5,7 @@
         <h1 class="page-title">媒体库</h1>
         <p class="page-subtitle">媒体备注和隐藏状态仅写入 admin.db</p>
       </div>
-      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
+      <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
     </div>
     <div class="toolbar">
       <el-input v-model="keyword" placeholder="搜索媒体标题" style="width: 280px" clearable @keyup.enter="loadData" />
@@ -17,7 +17,7 @@
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
     <div class="table-panel">
-      <el-table v-if="pageData?.items.length" :data="pageData.items">
+      <el-table v-if="pageData?.items.length" v-loading="loading" :data="pageData.items">
         <el-table-column prop="title" label="标题" min-width="220" />
         <el-table-column prop="media_type" label="类型" width="110" />
         <el-table-column prop="runtime" label="时长" width="110" />
@@ -48,9 +48,15 @@ import EmptyState from '../components/EmptyState.vue'
 const keyword = ref('')
 const mediaType = ref('')
 const pageData = ref<PageData<MediaItem> | null>(null)
+const loading = ref(false)
 
 async function loadData() {
-  pageData.value = await fetchMedia({ page: 1, page_size: 20, keyword: keyword.value, media_type: mediaType.value })
+  loading.value = true
+  try {
+    pageData.value = await fetchMedia({ page: 1, page_size: 20, keyword: keyword.value, media_type: mediaType.value })
+  } finally {
+    loading.value = false
+  }
 }
 
 async function toggleHidden(guid: string, hidden: boolean) {
@@ -61,4 +67,3 @@ async function toggleHidden(guid: string, hidden: boolean) {
 
 onMounted(loadData)
 </script>
-

@@ -17,6 +17,15 @@ body {
   background: #f5f7fb;
 }
 
+[data-theme='dark'] {
+  color: #d5dbea;
+  background: #111827;
+}
+
+[data-theme='dark'] body {
+  background: #111827;
+}
+
 .page-header {
   display: flex;
   align-items: center;
@@ -30,6 +39,10 @@ body {
   font-size: 22px;
   font-weight: 650;
   color: #172033;
+}
+
+[data-theme='dark'] .page-title {
+  color: #f5f7fb;
 }
 
 .page-subtitle {
@@ -63,6 +76,12 @@ body {
   background: #fff;
 }
 
+[data-theme='dark'] .metric-card,
+[data-theme='dark'] .table-panel {
+  border-color: #30394d;
+  background: #182033;
+}
+
 .metric-label {
   color: #6b7280;
   font-size: 13px;
@@ -75,11 +94,23 @@ body {
   color: #111827;
 }
 
+[data-theme='dark'] .metric-value,
+[data-theme='dark'] .panel-title {
+  color: #f5f7fb;
+}
+
 .table-panel {
   border: 1px solid #dde3ee;
   border-radius: 8px;
   background: #fff;
   overflow: hidden;
+}
+
+.muted-guid {
+  color: #8a94a6;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
 }
 
 .panel-title {
@@ -102,6 +133,22 @@ body {
   color: #b42318;
 }
 
+[data-theme='dark'] .empty-panel {
+  color: #a7b0c0;
+}
+
+[data-theme='dark'] .el-table,
+[data-theme='dark'] .el-table tr,
+[data-theme='dark'] .el-table th.el-table__cell,
+[data-theme='dark'] .el-table td.el-table__cell {
+  color: #d5dbea;
+  background: #182033;
+}
+
+[data-theme='dark'] .el-table__body tr:hover > td.el-table__cell {
+  background: #202a3d;
+}
+
 @media (max-width: 900px) {
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -118,4 +165,3 @@ body {
     flex-direction: column;
   }
 }
-

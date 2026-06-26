@@ -14,19 +14,25 @@ router = APIRouter(prefix="/api/media", tags=["media"], dependencies=[Depends(ge
 
 
 @router.get("")
-def list_media(page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=200), keyword: str | None = None, media_type: str | None = None):
-    _ = (keyword, media_type)
-    return ok(fntv_adapter.media_page(page, page_size))
+def list_media(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    keyword: str | None = None,
+    media_type: str | None = None,
+    show_hidden: bool = False,
+    db: Session = Depends(get_session),
+):
+    return ok(fntv_adapter.media_page(page, page_size, db=db, keyword=keyword, media_type=media_type, show_hidden=show_hidden))
 
 
 @router.get("/tree")
 def media_tree():
-    return ok([])
+    return ok(fntv_adapter.media_tree())
 
 
 @router.get("/{guid}")
-def media_detail(guid: str):
-    return ok({"guid": guid, "stats": {"play_count": 0, "completion_rate": 0}, "children": []})
+def media_detail(guid: str, db: Session = Depends(get_session)):
+    return ok(fntv_adapter.media_detail(guid, db=db))
 
 
 @router.get("/{guid}/children")
@@ -36,13 +42,12 @@ def children(guid: str):
 
 @router.get("/{guid}/history")
 def media_history(guid: str, page: int = 1, page_size: int = 20):
-    _ = guid
-    return ok(fntv_adapter.history_page(page, page_size))
+    return ok(fntv_adapter.media_history(guid, page, page_size))
 
 
 @router.get("/{guid}/stats")
 def media_stats(guid: str):
-    return ok({"guid": guid, "play_count": 0, "completion_rate": 0, "recent_play_at": None})
+    return ok(fntv_adapter.media_stats(guid))
 
 
 @router.put("/{guid}/profile")
@@ -63,4 +68,3 @@ def hide_media(guid: str, db: Session = Depends(get_session), current_user: Admi
 @router.post("/{guid}/unhide")
 def unhide_media(guid: str, db: Session = Depends(get_session), current_user: AdminUser = Depends(get_current_admin)):
     return ok(profile_service.upsert_media_profile(db, guid, ProfileUpdate(), hidden=0, admin_user_id=current_user.id))
-

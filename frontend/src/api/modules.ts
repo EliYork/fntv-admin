@@ -13,11 +13,20 @@ export interface DashboardOverview {
 
 export interface HistoryItem {
   id: string
+  user_guid: string
+  username: string
   user: string
+  item_guid: string
   title: string
-  played_at?: string | number | null
-  progress?: string | number | null
+  display_title: string
+  played_at?: string | null
+  position_seconds?: number | null
+  runtime_seconds?: number | null
+  progress_percent?: number | null
+  progress?: string | null
   watched: boolean
+  watched_text: string
+  resolution?: string | null
 }
 
 export interface UserItem {
@@ -29,6 +38,7 @@ export interface UserItem {
   last_play_at?: string | number | null
   play_count: number
   watch_seconds: number
+  watch_duration: string
   hidden: boolean
   display_name?: string | null
   note?: string | null
@@ -40,12 +50,15 @@ export interface MediaItem {
   original_title: string
   media_type: string
   runtime?: string | number | null
+  runtime_seconds?: number | null
   release_time?: string | number | null
   parent?: string | null
+  parent_guid?: string | null
   children_count: number
   play_count: number
   last_play_at?: string | number | null
   hidden: boolean
+  favorite?: boolean
   note?: string | null
 }
 

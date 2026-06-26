@@ -28,8 +28,8 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
-      - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+      - /usr/local/apps/@appdata/fntv-admin/data:/data
+      - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
     environment:
       APP_ENV: production
       APP_SECRET_KEY: change-me-please
@@ -42,7 +42,14 @@ services:
       LOG_RETENTION_DAYS: "14"
 ```
 
-3. 把 `/path/to/trimmedia.db` 改成飞牛影视数据库的真实宿主机路径，并保留 `:ro`。
+3. 检查挂载路径：
+
+```text
+飞牛影视数据库目录：/usr/local/apps/@appdata/trim.media/database -> /fntv 只读
+fntv-admin 数据目录：/usr/local/apps/@appdata/fntv-admin/data -> /data 读写
+```
+
+`FNTV_DB_PATH` 保持 `/fntv/trimmedia.db`。不要把飞牛影视数据库目录挂到 `/data`，也不要读写挂载飞牛影视数据库目录。
 
 4. 启动：
 
@@ -87,7 +94,7 @@ ghcr.io/<GitHub 用户名或组织名>/fntv-admin:<tag>
 容器内固定路径：
 
 ```text
-/fntv/trimmedia.db    飞牛影视数据库，只读
+/fntv/trimmedia.db    飞牛影视数据库，只读，由 /fntv 目录挂载提供
 /data/admin.db        fntv-admin 增强数据
 /data/logs            运行日志
 /data/cache           缓存
@@ -98,13 +105,13 @@ ghcr.io/<GitHub 用户名或组织名>/fntv-admin:<tag>
 
 ## 飞牛数据库只读保护
 
-`docker-compose.yml` 必须包含：
+`docker-compose.yml` 推荐包含：
 
 ```yaml
-- /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+- /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
 
-后端通过 SQLite URI `mode=ro` 打开飞牛数据库，并在连接上设置 `PRAGMA query_only = ON`。业务代码不提供任何飞牛数据库写入接口。
+`/data` 必须读写挂载，否则 `admin.db`、日志和缓存无法持久化。`/fntv` 必须只读挂载。后端通过 SQLite URI `mode=ro` 打开飞牛数据库，并在连接上设置 `PRAGMA query_only = ON`。业务代码不提供任何飞牛数据库写入接口。
 
 可用探测脚本检查数据库结构：
 

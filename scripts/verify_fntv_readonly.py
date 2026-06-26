@@ -23,7 +23,9 @@ ALLOWED_FILES = {
 def check_compose_ro() -> list[str]:
     compose = ROOT / "docker-compose.yml"
     text = compose.read_text(encoding="utf-8")
-    return [] if ":/fntv/trimmedia.db:ro" in text else ["docker-compose.yml is missing :ro for /fntv/trimmedia.db"]
+    if ":/fntv:ro" in text or ":/fntv/trimmedia.db:ro" in text:
+        return []
+    return ["docker-compose.yml is missing a read-only mount for /fntv or /fntv/trimmedia.db"]
 
 
 def scan_backend_sql() -> list[str]:

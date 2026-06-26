@@ -45,6 +45,18 @@ async function loadStatus() {
 }
 
 async function submit() {
+  if (!form.username.trim()) {
+    error.value = '请输入用户名'
+    return
+  }
+  if (!initialized.value && form.password.length < 8) {
+    error.value = '管理员密码至少需要 8 位'
+    return
+  }
+  if (initialized.value && !form.password) {
+    error.value = '请输入密码'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
@@ -96,4 +108,3 @@ p {
   margin-bottom: 14px;
 }
 </style>
-

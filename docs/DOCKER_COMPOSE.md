@@ -20,11 +20,13 @@ http://localhost:8080
 
 ```yaml
 volumes:
-  - ./data:/data
-  - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+  - /usr/local/apps/@appdata/fntv-admin/data:/data
+  - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
 
-飞牛影视数据库挂载必须保留 `:ro`，后台只读读取该数据库。`./data` 保存 `admin.db`、日志、缓存和备份。
+飞牛影视数据库目录挂载必须保留 `:ro`，后台只读读取 `/fntv/trimmedia.db`。`/data` 必须读写挂载，用于保存 `admin.db`、日志、缓存和备份。
+
+不要把飞牛影视数据库目录挂到 `/data`，也不要读写挂载飞牛影视数据库目录。
 
 ## 镜像地址
 

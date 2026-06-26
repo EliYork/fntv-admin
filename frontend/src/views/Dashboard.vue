@@ -5,7 +5,7 @@
         <h1 class="page-title">仪表盘</h1>
         <p class="page-subtitle">飞牛影视数据概览和最近播放活动</p>
       </div>
-      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
+      <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
     </div>
 
     <div v-if="overview?.error" class="error-panel">{{ overview.error }}</div>
@@ -19,9 +19,19 @@
 
     <div class="table-panel">
       <div class="panel-title">最近活动</div>
-      <el-table v-if="activities.length" :data="activities" height="360">
-        <el-table-column prop="user" label="用户" min-width="140" />
-        <el-table-column prop="title" label="媒体" min-width="220" />
+      <el-table v-if="activities.length" v-loading="loading" :data="activities" height="360">
+        <el-table-column label="用户" min-width="160">
+          <template #default="{ row }">
+            <span>{{ row.username || row.user || '-' }}</span>
+            <div v-if="row.username === row.user_guid" class="muted-guid">{{ row.user_guid }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="媒体" min-width="260">
+          <template #default="{ row }">
+            <span>{{ row.display_title || row.title || '-' }}</span>
+            <div v-if="row.display_title === row.item_guid" class="muted-guid">{{ row.item_guid }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="played_at" label="播放时间" min-width="160" />
         <el-table-column prop="progress" label="进度" width="120" />
       </el-table>
@@ -38,6 +48,7 @@ import EmptyState from '../components/EmptyState.vue'
 
 const overview = ref<DashboardOverview | null>(null)
 const activities = ref<HistoryItem[]>([])
+const loading = ref(false)
 
 const metrics = computed(() => [
   { label: '总用户数', value: overview.value?.total_users ?? 0 },
@@ -47,10 +58,14 @@ const metrics = computed(() => [
 ])
 
 async function loadData() {
-  overview.value = await fetchDashboardOverview()
-  activities.value = await fetchRecentActivities()
+  loading.value = true
+  try {
+    overview.value = await fetchDashboardOverview()
+    activities.value = await fetchRecentActivities()
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(loadData)
 </script>
-

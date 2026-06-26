@@ -253,3 +253,6 @@ def _media_row(row: dict[str, Any], table: TableInfo) -> dict[str, Any]:
         "note": None,
     }
 
+
+# Keep the original import path stable while using the Phase 6.5 schema adapter.
+from app.services.fntv_schema_adapter import *  # noqa: E402,F403

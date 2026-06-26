@@ -5,7 +5,7 @@
         <h1 class="page-title">用户管理</h1>
         <p class="page-subtitle">用户展示增强信息写入 admin.db，不修改飞牛用户表</p>
       </div>
-      <el-button :icon="Refresh" @click="loadData">刷新</el-button>
+      <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
     </div>
     <div class="toolbar">
       <el-input v-model="keyword" placeholder="搜索用户名" style="width: 260px" clearable @keyup.enter="loadData" />
@@ -13,11 +13,17 @@
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
     <div class="table-panel">
-      <el-table v-if="pageData?.items.length" :data="pageData.items">
+      <el-table v-if="pageData?.items.length" v-loading="loading" :data="pageData.items">
         <el-table-column prop="username" label="用户名" min-width="160" />
-        <el-table-column prop="guid" label="GUID" min-width="220" />
+        <el-table-column label="GUID" min-width="220">
+          <template #default="{ row }">
+            <span class="muted-guid">{{ row.guid }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="play_count" label="播放次数" width="110" />
+        <el-table-column prop="watch_duration" label="观看时长" width="120" />
         <el-table-column prop="last_play_at" label="最近播放" min-width="150" />
+        <el-table-column prop="last_login_at" label="最近登录" min-width="150" />
         <el-table-column prop="note" label="备注" min-width="180" />
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
@@ -43,9 +49,15 @@ import EmptyState from '../components/EmptyState.vue'
 const keyword = ref('')
 const showHidden = ref(false)
 const pageData = ref<PageData<UserItem> | null>(null)
+const loading = ref(false)
 
 async function loadData() {
-  pageData.value = await fetchUsers({ page: 1, page_size: 20, keyword: keyword.value, show_hidden: showHidden.value })
+  loading.value = true
+  try {
+    pageData.value = await fetchUsers({ page: 1, page_size: 20, keyword: keyword.value, show_hidden: showHidden.value })
+  } finally {
+    loading.value = false
+  }
 }
 
 async function toggleHidden(guid: string, hidden: boolean) {
@@ -56,4 +68,3 @@ async function toggleHidden(guid: string, hidden: boolean) {
 
 onMounted(loadData)
 </script>
-

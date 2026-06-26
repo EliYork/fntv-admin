@@ -14,25 +14,29 @@ router = APIRouter(prefix="/api/users", tags=["users"], dependencies=[Depends(ge
 
 
 @router.get("")
-def list_users(page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=200), keyword: str | None = None):
-    _ = keyword
-    return ok(fntv_adapter.users_page(page, page_size))
+def list_users(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    keyword: str | None = None,
+    show_hidden: bool = False,
+    db: Session = Depends(get_session),
+):
+    return ok(fntv_adapter.users_page(page, page_size, db=db, keyword=keyword, show_hidden=show_hidden))
 
 
 @router.get("/{guid}")
-def user_detail(guid: str):
-    return ok({"guid": guid, "stats": {"play_count": 0, "watch_seconds": 0}, "recent_history": []})
+def user_detail(guid: str, db: Session = Depends(get_session)):
+    return ok(fntv_adapter.user_detail(guid, db=db))
 
 
 @router.get("/{guid}/history")
 def user_history(guid: str, page: int = 1, page_size: int = 20):
-    _ = guid
-    return ok(fntv_adapter.history_page(page, page_size))
+    return ok(fntv_adapter.user_history(guid, page, page_size))
 
 
 @router.get("/{guid}/stats")
 def user_stats(guid: str):
-    return ok({"guid": guid, "play_count": 0, "watch_seconds": 0, "recent_play_at": None})
+    return ok(fntv_adapter.user_stats(guid))
 
 
 @router.put("/{guid}/profile")
@@ -53,4 +57,3 @@ def hide_user(guid: str, db: Session = Depends(get_session), current_user: Admin
 @router.post("/{guid}/unhide")
 def unhide_user(guid: str, db: Session = Depends(get_session), current_user: AdminUser = Depends(get_current_admin)):
     return ok(profile_service.upsert_user_profile(db, guid, ProfileUpdate(), hidden=0, admin_user_id=current_user.id))
-
