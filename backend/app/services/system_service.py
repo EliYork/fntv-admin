@@ -9,10 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.fntv_readonly import assert_readonly_write_fails, open_fntv_connection
+from app.db.fntv_readonly import assert_readonly_write_fails
 from app.db.fntv_snapshot import (
     active_database,
     copy_fntv_snapshot,
+    open_fntv_source_connection,
     refresh_fntv_snapshot,
     snapshot_status,
 )
@@ -96,7 +97,7 @@ def database_status() -> dict[str, Any]:
 
     source_direct_ok = None
     try:
-        with open_fntv_connection() as conn:
+        with open_fntv_source_connection() as conn:
             conn.execute("SELECT 1").fetchone()
         source_direct_ok = True
     except Exception:
@@ -118,6 +119,13 @@ def database_status() -> dict[str, Any]:
     current_active = active_database()
     fntv["active_database"] = current_active
     fntv["fallback_to_source"] = current_active == "source"
+    fntv["degraded"] = bool(fntv.get("ok") and not snap_info["snapshot_ok"] and source_direct_ok)
+    if fntv.get("ok") and snap_info["snapshot_ok"]:
+        fntv["availability"] = "normal"
+    elif fntv.get("ok") and source_direct_ok:
+        fntv["availability"] = "degraded"
+    else:
+        fntv["availability"] = "unavailable"
 
     if not snap_info["source_exists"]:
         fntv["error"] = fntv.get("error") or "FNTV_DATABASE_NOT_FOUND"

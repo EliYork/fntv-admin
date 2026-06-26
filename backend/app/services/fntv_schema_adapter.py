@@ -16,12 +16,13 @@ from app.db.schema_check import TableInfo, find_column, inspect_schema, quote_id
 from app.models import MediaProfile, UserProfile
 from app.utils.pagination import normalize_page
 
-USER_TABLES = ("users", "user")
-ITEM_TABLES = ("items", "item", "media")
+USER_TABLES = ("user", "users")
+ITEM_TABLES = ("item", "items", "media")
 PLAY_TABLES = ("item_user_play", "user_play", "play_history", "playback_history")
 
 USER_DISPLAY_FIELDS = ("username", "nickname", "name", "display_name", "guid")
-ITEM_TITLE_FIELDS = ("title", "original_title", "name", "guid")
+ITEM_TITLE_FIELDS = ("title", "original_title", "filename", "name", "guid")
+PLAY_TIME_FIELDS = ("update_time", "create_time", "last_play_time", "timestamp", "played_at", "time")
 
 USER_FIELD_PRIORITIES = {
     "guid": ("guid", "user_guid", "uuid", "id"),
@@ -34,7 +35,7 @@ USER_FIELD_PRIORITIES = {
 ITEM_FIELD_PRIORITIES = {
     "guid": ("guid", "item_guid", "uuid", "id"),
     "title": ITEM_TITLE_FIELDS,
-    "original_title": ("original_title", "original_name", "title", "name"),
+    "original_title": ("original_title", "original_name", "title", "filename", "name"),
     "overview": ("overview", "summary", "description"),
     "media_type": ("type", "media_type", "kind", "category"),
     "parent_guid": ("parent_guid", "parent_id", "parent", "series_guid", "season_guid"),
@@ -48,7 +49,7 @@ PLAY_FIELD_PRIORITIES = {
     "id": ("id", "guid", "uuid"),
     "user_guid": ("user_guid", "user_id", "uid"),
     "item_guid": ("item_guid", "item_id", "media_guid", "media_id"),
-    "played_at": ("update_time", "create_time", "last_play_time", "timestamp", "played_at", "time"),
+    "played_at": PLAY_TIME_FIELDS,
     "position": ("ts", "position", "playback_position", "progress"),
     "watched": ("watched", "is_watched", "completed", "finished"),
     "resolution": ("resolution", "video_resolution", "quality"),
@@ -184,7 +185,7 @@ def overview_data() -> dict[str, Any]:
         with open_fntv_connection() as conn:
             users = _count_table(conn, schema.users.table)
             media = _count_table(conn, schema.items.table)
-            plays = _count_table(conn, schema.plays.table)
+            plays = _count_play_records(conn, schema)
             today_plays = _count_today_plays(conn, schema)
             latest_play_time = _latest_play_time(conn, schema)
         return {
@@ -392,6 +393,47 @@ def media_stats(guid: str) -> dict[str, Any]:
         return _empty_media_stats(guid)
 
 
+def _find_column(schema: FntvSchemaInfo, table_name: str | None, hints: tuple[str, ...]) -> str | None:
+    table = schema.tables.get(table_name or "")
+    return find_column(table, hints) if table else None
+
+
+def _play_time_columns(schema: FntvSchemaInfo) -> list[str]:
+    table = schema.tables.get(schema.plays.table or "")
+    if not table:
+        return []
+    by_lower = {column.lower(): column for column in table.columns}
+    return [by_lower[name] for name in PLAY_TIME_FIELDS if name in by_lower]
+
+
+def _qualified_column(column: str, alias: str | None = None) -> str:
+    prefix = f"{alias}." if alias else ""
+    return f"{prefix}{quote_identifier(column)}"
+
+
+def _play_time_expr(schema: FntvSchemaInfo, alias: str | None = None) -> str | None:
+    columns = _play_time_columns(schema)
+    if not columns:
+        return None
+    expressions = [f"NULLIF(NULLIF({_qualified_column(column, alias)}, 0), '')" for column in columns]
+    return expressions[0] if len(expressions) == 1 else f"COALESCE({', '.join(expressions)})"
+
+
+def _play_time_value(row: dict[str, Any], schema: FntvSchemaInfo) -> Any:
+    for column in _play_time_columns(schema):
+        value = row.get(column)
+        if value not in (None, "", 0, "0"):
+            return value
+    return None
+
+
+def _visible_clause(schema: FntvSchemaInfo, alias: str | None = None) -> str | None:
+    visible_col = schema.plays.fields.get("visible")
+    if not visible_col:
+        return None
+    return f"{_qualified_column(visible_col, alias)} = 1"
+
+
 def _choose_table(tables: dict[str, TableInfo], preferred: tuple[str, ...], hints: tuple[str, ...]) -> str | None:
     by_lower = {name.lower(): name for name in tables}
     for name in preferred:
@@ -399,8 +441,11 @@ def _choose_table(tables: dict[str, TableInfo], preferred: tuple[str, ...], hint
             return by_lower[name]
     for name in tables:
         lower = name.lower()
-        if any(hint in lower for hint in hints):
-            return name
+        for hint in hints:
+            if hint in {"user", "users", "item", "items", "item_user_play"}:
+                continue
+            if hint in lower:
+                return name
     return None
 
 
@@ -417,22 +462,39 @@ def _count_table(conn: sqlite3.Connection, table_name: str | None) -> int:
     return int(row["total"]) if row else 0
 
 
+def _count_play_records(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int:
+    table = schema.plays.table
+    if not table:
+        return 0
+    where = _visible_clause(schema)
+    where_sql = f" WHERE {where}" if where else ""
+    row = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(table)}{where_sql}").fetchone()
+    return int(row["total"]) if row else 0
+
+
 def _count_today_plays(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int:
     table = schema.plays.table
-    time_col = schema.plays.fields.get("played_at")
-    if not table or not time_col:
+    time_expr = _play_time_expr(schema)
+    if not table or not time_expr:
         return 0
     start = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-    row = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(table)} WHERE {quote_identifier(time_col)} >= ?", (start,)).fetchone()
+    where = [f"{time_expr} >= ?"]
+    params: list[Any] = [start]
+    visible = _visible_clause(schema)
+    if visible:
+        where.append(visible)
+    row = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(table)} WHERE {' AND '.join(where)}", params).fetchone()
     return int(row["total"]) if row else 0
 
 
 def _latest_play_time(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> str | None:
     table = schema.plays.table
-    time_col = schema.plays.fields.get("played_at")
-    if not table or not time_col:
+    time_expr = _play_time_expr(schema)
+    if not table or not time_expr:
         return None
-    row = conn.execute(f"SELECT {quote_identifier(time_col)} AS played_at FROM {quote_identifier(table)} ORDER BY {quote_identifier(time_col)} DESC LIMIT 1").fetchone()
+    where = _visible_clause(schema)
+    where_sql = f" WHERE {where}" if where else ""
+    row = conn.execute(f"SELECT {time_expr} AS played_at FROM {quote_identifier(table)}{where_sql} ORDER BY {time_expr} DESC LIMIT 1").fetchone()
     return normalize_timestamp(row["played_at"]) if row else None
 
 
@@ -442,8 +504,8 @@ def _play_rows(conn: sqlite3.Connection, schema: FntvSchemaInfo, page: int, page
         return [], 0
     _, clean_page_size, offset = normalize_page(page, page_size)
     where, params, joins = _play_where(schema, filters)
-    order = schema.plays.fields.get("played_at")
-    order_sql = f" ORDER BY p.{quote_identifier(order)} DESC" if order else " ORDER BY p.rowid DESC"
+    order = _play_time_expr(schema, "p")
+    order_sql = f" ORDER BY {order} DESC" if order else " ORDER BY p.rowid DESC"
     from_sql = f"FROM {quote_identifier(table)} p {joins}"
     where_sql = f" WHERE {' AND '.join(where)}" if where else ""
     count = conn.execute(f"SELECT COUNT(*) AS total {from_sql}{where_sql}", params).fetchone()
@@ -456,6 +518,9 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
     params: list[Any] = []
     joins = ""
     fields = schema.plays.fields
+    visible = _visible_clause(schema, "p")
+    if visible:
+        where.append(visible)
     if filters.get("user_guid") and fields.get("user_guid"):
         where.append(f"p.{quote_identifier(fields['user_guid'])} = ?")
         params.append(filters["user_guid"])
@@ -477,20 +542,25 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
     if filters.get("media_type") and fields.get("type"):
         where.append(f"p.{quote_identifier(fields['type'])} = ?")
         params.append(filters["media_type"])
-    if filters.get("start_time") and fields.get("played_at"):
+    time_expr = _play_time_expr(schema, "p")
+    if filters.get("start_time") and time_expr:
         start = _parse_datetime_to_seconds(filters["start_time"])
         if start:
-            where.append(f"p.{quote_identifier(fields['played_at'])} >= ?")
+            where.append(f"{time_expr} >= ?")
             params.append(start)
-    if filters.get("end_time") and fields.get("played_at"):
+    if filters.get("end_time") and time_expr:
         end = _parse_datetime_to_seconds(filters["end_time"])
         if end:
-            where.append(f"(p.{quote_identifier(fields['played_at'])} <= ? OR p.{quote_identifier(fields['played_at'])} <= ?)")
-            params.extend([end, end * 1000])
+            where.append(f"{time_expr} <= ?")
+            params.append(end)
     keyword = (filters.get("keyword") or "").strip()
     if keyword and schema.items.table and fields.get("item_guid") and schema.items.fields.get("guid"):
         joins = f"LEFT JOIN {quote_identifier(schema.items.table)} i ON p.{quote_identifier(fields['item_guid'])} = i.{quote_identifier(schema.items.fields['guid'])}"
-        title_columns = [schema.items.fields.get("title"), schema.items.fields.get("original_title")]
+        title_columns = [
+            schema.items.fields.get("title"),
+            schema.items.fields.get("original_title"),
+            _find_column(schema, schema.items.table, ("filename",)),
+        ]
         title_columns = [col for col in dict.fromkeys(title_columns) if col]
         if title_columns:
             where.append("(" + " OR ".join(f"i.{quote_identifier(col)} LIKE ?" for col in title_columns) + ")")
@@ -549,7 +619,7 @@ def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict
         "item_guid": item_guid,
         "title": title,
         "display_title": title,
-        "played_at": normalize_timestamp(_row_value(row, fields.get("played_at"))) or "",
+        "played_at": normalize_timestamp(_play_time_value(row, schema)) or "",
         "position_seconds": progress["position_seconds"],
         "runtime_seconds": progress["runtime_seconds"],
         "progress_percent": progress["progress_percent"],
@@ -643,14 +713,18 @@ def _user_stats_for(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: lis
     if not keys:
         return {}
     placeholders = ",".join("?" for _ in keys)
-    time_col = schema.plays.fields.get("played_at")
+    time_expr = _play_time_expr(schema)
     position_col = schema.plays.fields.get("position")
     select_parts = [f"{quote_identifier(user_col)} AS guid", "COUNT(*) AS play_count"]
     if position_col:
         select_parts.append(f"SUM(COALESCE({quote_identifier(position_col)}, 0)) AS watch_seconds")
-    if time_col:
-        select_parts.append(f"MAX({quote_identifier(time_col)}) AS recent_play")
-    rows = conn.execute(f"SELECT {', '.join(select_parts)} FROM {quote_identifier(table)} WHERE {quote_identifier(user_col)} IN ({placeholders}) GROUP BY {quote_identifier(user_col)}", keys).fetchall()
+    if time_expr:
+        select_parts.append(f"MAX({time_expr}) AS recent_play")
+    where = [f"{quote_identifier(user_col)} IN ({placeholders})"]
+    visible = _visible_clause(schema)
+    if visible:
+        where.append(visible)
+    rows = conn.execute(f"SELECT {', '.join(select_parts)} FROM {quote_identifier(table)} WHERE {' AND '.join(where)} GROUP BY {quote_identifier(user_col)}", keys).fetchall()
     result: dict[str, dict[str, Any]] = {}
     for row in rows:
         watch_seconds = normalize_duration_seconds(row["watch_seconds"]) if position_col else 0
@@ -659,7 +733,7 @@ def _user_stats_for(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: lis
             "play_count": int(row["play_count"] or 0),
             "watch_seconds": watch_seconds or 0,
             "watch_duration": format_duration(watch_seconds or 0),
-            "recent_play_at": normalize_timestamp(row["recent_play"]) if time_col else None,
+            "recent_play_at": normalize_timestamp(row["recent_play"]) if time_expr else None,
         }
     return result
 
@@ -673,14 +747,18 @@ def _media_stats_for(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: li
     if not keys:
         return {}
     placeholders = ",".join("?" for _ in keys)
-    time_col = schema.plays.fields.get("played_at")
+    time_expr = _play_time_expr(schema)
     watched_col = schema.plays.fields.get("watched")
     select_parts = [f"{quote_identifier(item_col)} AS guid", "COUNT(*) AS play_count"]
-    if time_col:
-        select_parts.append(f"MAX({quote_identifier(time_col)}) AS recent_play")
+    if time_expr:
+        select_parts.append(f"MAX({time_expr}) AS recent_play")
     if watched_col:
         select_parts.append(f"SUM(CASE WHEN {quote_identifier(watched_col)} THEN 1 ELSE 0 END) AS watched_count")
-    rows = conn.execute(f"SELECT {', '.join(select_parts)} FROM {quote_identifier(table)} WHERE {quote_identifier(item_col)} IN ({placeholders}) GROUP BY {quote_identifier(item_col)}", keys).fetchall()
+    where = [f"{quote_identifier(item_col)} IN ({placeholders})"]
+    visible = _visible_clause(schema)
+    if visible:
+        where.append(visible)
+    rows = conn.execute(f"SELECT {', '.join(select_parts)} FROM {quote_identifier(table)} WHERE {' AND '.join(where)} GROUP BY {quote_identifier(item_col)}", keys).fetchall()
     result: dict[str, dict[str, Any]] = {}
     for row in rows:
         play_count = int(row["play_count"] or 0)
@@ -688,7 +766,7 @@ def _media_stats_for(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: li
         result[str(row["guid"])] = {
             "guid": str(row["guid"]),
             "play_count": play_count,
-            "recent_play_at": normalize_timestamp(row["recent_play"]) if time_col else None,
+            "recent_play_at": normalize_timestamp(row["recent_play"]) if time_expr else None,
             "completion_rate": round((watched_count / play_count) * 100, 1) if play_count else 0,
         }
     return result
@@ -735,14 +813,22 @@ def _hierarchy_title(conn: sqlite3.Connection, schema: FntvSchemaInfo, row: dict
             parts.insert(0, parent_title)
     season = _row_value(row, schema.items.fields.get("season_number"))
     episode = _row_value(row, schema.items.fields.get("episode_number"))
-    if season not in (None, "") and episode not in (None, ""):
-        try:
-            marker = f"S{int(float(season)):02d}E{int(float(episode)):02d}"
-            if marker not in parts:
-                parts.insert(max(1, len(parts) - 1), marker)
-        except (TypeError, ValueError):
-            pass
+    marker = _season_episode_marker(season, episode)
+    if marker and marker not in parts:
+        parts.insert(max(1, len(parts) - 1), marker)
     return " - ".join(str(part) for part in parts if part) or title
+
+
+def _season_episode_marker(season: Any, episode: Any) -> str | None:
+    if season in (None, ""):
+        return None
+    try:
+        season_text = f"S{int(float(season)):02d}"
+        if episode in (None, ""):
+            return season_text
+        return f"{season_text}E{int(float(episode)):02d}"
+    except (TypeError, ValueError):
+        return None
 
 
 def _user_profiles(db: Session | None) -> dict[str, UserProfile]:
@@ -769,7 +855,7 @@ def _display_user(row: dict[str, Any], schema: FntvSchemaInfo) -> str | None:
 
 
 def _display_item(row: dict[str, Any], schema: FntvSchemaInfo) -> str | None:
-    for key in ("title", "original_title", "name", "guid"):
+    for key in ("title", "original_title", "filename", "name", "guid"):
         value = row.get(key)
         if value not in (None, ""):
             return str(value)

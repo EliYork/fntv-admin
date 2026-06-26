@@ -32,6 +32,8 @@ export interface DatabaseStatus {
     source_direct_ok: boolean | null
     active_database: string
     fallback_to_source: boolean
+    degraded?: boolean
+    availability?: 'normal' | 'degraded' | 'unavailable'
     snapshot_path_container: string
     snapshot_exists: boolean
     snapshot_dir_exists: boolean

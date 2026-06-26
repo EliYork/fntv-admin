@@ -12,13 +12,13 @@ from app.db.fntv_readonly import open_fntv_connection
 logger = logging.getLogger(__name__)
 
 CORE_TABLE_HINTS: dict[str, tuple[str, ...]] = {
-    "user": ("user", "account", "member"),
-    "item": ("item", "media", "video", "movie", "episode"),
+    "user": ("user", "users", "account", "member"),
+    "item": ("item", "items", "media", "video", "movie", "episode"),
     "item_user_play": ("item_user_play", "play_history", "playback_history", "play", "history", "watch", "progress"),
 }
 
 USER_FIELD_HINTS = ("username", "nickname", "name", "display_name", "guid")
-ITEM_FIELD_HINTS = ("title", "original_title", "name", "guid")
+ITEM_FIELD_HINTS = ("title", "original_title", "filename", "name", "guid")
 PLAY_USER_GUID_HINTS = ("user_guid", "user_id", "uid")
 PLAY_ITEM_GUID_HINTS = ("item_guid", "item_id", "media_guid", "media_id")
 PLAY_POSITION_HINTS = ("ts", "position", "playback_position", "progress")
@@ -173,17 +173,27 @@ def _find_col_in(tables: dict[str, TableInfo], table_name: str, hints: tuple[str
 
 
 def find_table(tables: dict[str, TableInfo], hints: tuple[str, ...]) -> str | None:
+    by_lower = {name.lower(): name for name in tables}
+    for hint in hints:
+        if hint in by_lower:
+            return by_lower[hint]
     for table in tables.values():
         lower = table.name.lower()
-        if any(hint in lower for hint in hints):
-            return table.name
+        for hint in hints:
+            if hint in {"user", "users", "item", "items", "item_user_play"}:
+                continue
+            if hint in lower:
+                return table.name
     return None
 
 
 def find_column(table: TableInfo, hints: tuple[str, ...]) -> str | None:
+    by_lower = {column.lower(): column for column in table.columns}
+    for hint in hints:
+        if hint in by_lower:
+            return by_lower[hint]
     for column in table.columns:
         lower = column.lower()
         if any(hint in lower for hint in hints):
             return column
     return None
-

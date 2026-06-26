@@ -13,8 +13,8 @@
     <el-container>
       <el-header class="topbar">
         <div class="status-row">
-          <el-tag :type="databaseOk ? 'success' : 'danger'" effect="light">
-            {{ databaseOk ? '飞牛数据库正常' : '飞牛数据库异常' }}
+          <el-tag :type="databaseStatusType" effect="light">
+            {{ databaseStatusLabel }}
           </el-tag>
           <span class="refresh-time">刷新：{{ refreshedAt }}</span>
         </div>
@@ -46,6 +46,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const databaseOk = ref(false)
+const databaseDegraded = ref(false)
 const refreshedAt = ref('-')
 const darkMode = ref(localStorage.getItem('fntv_theme') === 'dark')
 const drawerVisible = ref(false)
@@ -61,12 +62,26 @@ const navItems = [
   { path: '/settings', label: '系统设置', icon: Setting }
 ]
 
+const databaseStatusType = computed(() => {
+  if (databaseOk.value) return 'success'
+  if (databaseDegraded.value) return 'warning'
+  return 'danger'
+})
+
+const databaseStatusLabel = computed(() => {
+  if (databaseOk.value) return '飞牛数据库正常'
+  if (databaseDegraded.value) return '源库直连降级'
+  return '飞牛数据库异常'
+})
+
 async function refreshDatabaseStatus() {
   try {
     const status = await fetchDatabaseStatus()
-    databaseOk.value = status.fntv.ok
+    databaseOk.value = status.fntv.ok && status.fntv.snapshot_ok
+    databaseDegraded.value = status.fntv.ok && !status.fntv.snapshot_ok && status.fntv.source_direct_ok === true
   } catch {
     databaseOk.value = false
+    databaseDegraded.value = false
   } finally {
     refreshedAt.value = new Date().toLocaleTimeString()
   }

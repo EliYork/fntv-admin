@@ -11,6 +11,9 @@
     <div class="table-panel section">
       <div class="panel-title">数据源</div>
       <el-descriptions v-if="status" :column="1" border>
+        <el-descriptions-item label="整体状态">
+          <el-tag :type="databaseAvailabilityTag" size="small">{{ databaseAvailabilityLabel }}</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="源数据库路径">{{ status.fntv.source_path_container }}</el-descriptions-item>
         <el-descriptions-item label="源数据库存在">{{ status.fntv.source_exists ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="源数据库可读">{{ status.fntv.source_readable ? '是' : '否' }}</el-descriptions-item>
@@ -189,8 +192,9 @@
       </div>
     </div>
 
-    <el-dialog v-model="copyDialogVisible" title="手动复制诊断信息" width="560px">
-      <el-input v-model="copyText" type="textarea" :rows="16" readonly />
+    <el-dialog v-model="copyDialogVisible" title="手动复制诊断信息" width="560px" @opened="selectCopyText">
+      <p style="margin-bottom: 8px; color: #e6a23c; font-size: 13px;">浏览器限制了自动复制，请按 Ctrl+C 手动复制</p>
+      <el-input ref="copyTextareaRef" v-model="copyText" type="textarea" :rows="16" readonly />
       <template #footer>
         <el-button @click="copyDialogVisible = false">关闭</el-button>
       </template>
@@ -210,6 +214,7 @@ const theme = ref('system')
 const refreshing = ref(false)
 const copyDialogVisible = ref(false)
 const copyText = ref('')
+const copyTextareaRef = ref<InstanceType<typeof import('element-plus')['ElInput']> | null>(null)
 
 const capabilityLabels: Record<string, string> = {
   can_read_users: '读取用户列表',
@@ -224,7 +229,22 @@ const sourceDirectLabel = computed(() => {
   if (!status.value) return '-'
   const v = status.value.fntv.source_direct_ok
   if (v === null) return '未检测'
-  return v ? '成功' : '失败（使用快照）'
+  if (v) return '成功'
+  return status.value.fntv.snapshot_ok ? '失败（使用快照）' : '失败'
+})
+
+const databaseAvailabilityLabel = computed(() => {
+  if (!status.value) return '-'
+  if (status.value.fntv.ok && status.value.fntv.snapshot_ok) return '飞牛数据库正常'
+  if (status.value.fntv.ok && !status.value.fntv.snapshot_ok && status.value.fntv.source_direct_ok === true) return '源库直连降级'
+  return '飞牛数据库异常'
+})
+
+const databaseAvailabilityTag = computed(() => {
+  if (!status.value) return 'info'
+  if (status.value.fntv.ok && status.value.fntv.snapshot_ok) return 'success'
+  if (status.value.fntv.ok && !status.value.fntv.snapshot_ok && status.value.fntv.source_direct_ok === true) return 'warning'
+  return 'danger'
 })
 
 const snapshotRefreshLabel = computed(() => {
@@ -285,6 +305,8 @@ function buildDiagnosticsJson(): string {
       source_direct_ok: status.value.fntv.source_direct_ok,
       active_database: status.value.fntv.active_database,
       fallback_to_source: status.value.fntv.fallback_to_source,
+      availability: status.value.fntv.availability ?? databaseAvailabilityLabel.value,
+      degraded: status.value.fntv.degraded ?? (status.value.fntv.ok && !status.value.fntv.snapshot_ok && status.value.fntv.source_direct_ok === true),
       snapshot_exists: status.value.fntv.snapshot_exists,
       snapshot_dir_exists: status.value.fntv.snapshot_dir_exists,
       snapshot_dir_writable: status.value.fntv.snapshot_dir_writable,
@@ -315,15 +337,27 @@ function copyDiagnostics() {
   const text = buildDiagnosticsJson()
   if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
     navigator.clipboard.writeText(text).then(() => {
-      ElMessage.success('诊断信息已复制到剪贴板')
+      ElMessage.success('已复制诊断信息')
     }).catch(() => {
       copyText.value = text
       copyDialogVisible.value = true
+      ElMessage.warning('浏览器限制了自动复制，请按 Ctrl+C 手动复制')
     })
   } else {
     copyText.value = text
     copyDialogVisible.value = true
+    ElMessage.warning('浏览器限制了自动复制，请按 Ctrl+C 手动复制')
   }
+}
+
+function selectCopyText() {
+  setTimeout(() => {
+    const textarea = copyTextareaRef.value?.$el?.querySelector('textarea')
+    if (textarea) {
+      textarea.focus()
+      textarea.select()
+    }
+  }, 50)
 }
 
 onMounted(loadStatus)
