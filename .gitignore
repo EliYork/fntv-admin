@@ -14,15 +14,23 @@ backup/
 .env
 .env.local
 
+.agents/
+.codex/
+
 node_modules/
 dist/
+.vite/
+coverage/
 
 __pycache__/
 *.pyc
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .tmp_pycache/
 .venv/
 venv/
+htmlcov/
 
 .DS_Store
 Thumbs.db
