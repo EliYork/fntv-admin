@@ -24,7 +24,9 @@
       <div class="panel-title">快照</div>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="快照路径">{{ status.fntv.snapshot_path_container }}</el-descriptions-item>
-        <el-descriptions-item label="快照存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="快照目录存在">{{ status.fntv.snapshot_dir_exists ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="快照目录可写">{{ status.fntv.snapshot_dir_writable ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="快照文件存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="快照状态">
           <el-tag :type="status.fntv.snapshot_ok ? 'success' : 'danger'" size="small">
             {{ status.fntv.snapshot_ok ? '正常' : '异常' }}
@@ -32,6 +34,8 @@
         </el-descriptions-item>
         <el-descriptions-item label="最近刷新">{{ snapshotRefreshLabel }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.snapshot_error" label="快照错误">{{ status.fntv.snapshot_error }}</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.snapshot_error_type" label="错误类型">{{ status.fntv.snapshot_error_type }}</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.snapshot_error_message" label="错误详情">{{ status.fntv.snapshot_error_message }}</el-descriptions-item>
         <el-descriptions-item label="当前数据源">
           <el-tag :type="activeDatabaseTag" size="small">{{ activeDatabaseLabel }}</el-tag>
         </el-descriptions-item>
@@ -76,6 +80,18 @@
       >
         <template #title>
           源库直读失败，快照也不可用。请检查挂载路径和权限，或尝试手动刷新快照。
+        </template>
+      </el-alert>
+
+      <el-alert
+        v-if="status.fntv.source_direct_ok === true && !status.fntv.snapshot_ok"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-top: 12px"
+      >
+        <template #title>
+          快照创建失败，但源库直读正常。当前使用源库只读直连，不影响基本功能。快照错误：{{ status.fntv.snapshot_error_message || status.fntv.snapshot_error }}
         </template>
       </el-alert>
     </div>
@@ -270,8 +286,12 @@ function buildDiagnosticsJson(): string {
       active_database: status.value.fntv.active_database,
       fallback_to_source: status.value.fntv.fallback_to_source,
       snapshot_exists: status.value.fntv.snapshot_exists,
+      snapshot_dir_exists: status.value.fntv.snapshot_dir_exists,
+      snapshot_dir_writable: status.value.fntv.snapshot_dir_writable,
       snapshot_ok: status.value.fntv.snapshot_ok,
       snapshot_error: status.value.fntv.snapshot_error ?? null,
+      snapshot_error_type: status.value.fntv.snapshot_error_type ?? null,
+      snapshot_error_message: status.value.fntv.snapshot_error_message ?? null,
       snapshot_last_refresh_at: status.value.fntv.snapshot_last_refresh_at,
       error: status.value.fntv.error ?? null,
       error_type: status.value.fntv.error_type ?? null,

@@ -34,9 +34,14 @@ export interface DatabaseStatus {
     fallback_to_source: boolean
     snapshot_path_container: string
     snapshot_exists: boolean
+    snapshot_dir_exists: boolean
+    snapshot_dir_writable: boolean
+    snapshot_tmp_path: string
     snapshot_last_refresh_at: number | null
     snapshot_ok: boolean
     snapshot_error: string | null
+    snapshot_error_type: string | null
+    snapshot_error_message: string | null
     error?: string | null
     error_type?: string | null
     error_message?: string | null
