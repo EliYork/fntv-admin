@@ -12,13 +12,10 @@ class Settings(BaseSettings):
     app_env: str = "production"
     app_secret_key: str = Field(default="change-me")
     fntv_db_path: Path = Path("/fntv/trimmedia.db")
-    fntv_snapshot_path: Path = Path("/data/cache/trimmedia.snapshot.db")
     admin_db_path: Path = Path("/data/admin.db")
     log_dir: Path = Path("/data/logs")
     cache_dir: Path = Path("/data/cache")
     backup_dir: Path = Path("/data/backup")
-    database_snapshot_enabled: bool = True
-    database_snapshot_interval_seconds: int = 60
     default_page_size: int = 20
     log_retention_days: int = 14
     access_token_expire_minutes: int = 60 * 24
@@ -40,4 +37,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

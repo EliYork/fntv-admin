@@ -1,4 +1,4 @@
-import { getApi, postApi } from './client'
+import { getApi } from './client'
 
 export interface FntvCapabilities {
   [key: string]: boolean
@@ -34,7 +34,7 @@ export interface DatabaseStatus {
     fallback_to_source: boolean
     degraded?: boolean
     active_db_path?: string | null
-    availability?: 'available' | 'degraded' | 'unavailable'
+    availability?: 'available' | 'unavailable'
     warnings?: Array<{ code: string | null; type: string | null; message: string | null }>
     snapshot_path_container: string
     snapshot_exists: boolean
@@ -42,7 +42,8 @@ export interface DatabaseStatus {
     snapshot_dir_writable: boolean
     snapshot_tmp_path: string
     snapshot_last_refresh_at: number | null
-    snapshot_ok: boolean
+    snapshot_enabled?: boolean
+    snapshot_ok: boolean | null
     snapshot_error: string | null
     snapshot_error_type: string | null
     snapshot_error_message: string | null
@@ -55,7 +56,6 @@ export interface DatabaseStatus {
     core_candidates?: CoreCandidates
     required_tables_status?: RequiredTablesStatus
     capabilities?: FntvCapabilities
-    write_probe_failed?: boolean
   }
   admin: {
     ok: boolean
@@ -72,6 +72,6 @@ export function fetchDatabaseStatus() {
   return getApi<DatabaseStatus>('/system/database-status')
 }
 
-export function refreshSnapshot() {
-  return postApi<{ ok: boolean; snapshot_path?: string; error?: string }>('/system/refresh-snapshot')
+export function fetchDatabaseStatusDetail() {
+  return getApi<DatabaseStatus>('/system/database-status', { detail: true })
 }

@@ -280,7 +280,7 @@ fntv-admin 单容器
 
 ```text
 飞牛影视数据库 trimmedia.db
-   ↓ 只读
+   ↓ SQLite mode=ro + PRAGMA query_only
 FastAPI service 层
    ↓
 API response
@@ -461,9 +461,6 @@ ADMIN_DB_PATH=/data/admin.db
 LOG_DIR=/data/logs
 CACHE_DIR=/data/cache
 BACKUP_DIR=/data/backup
-
-DATABASE_SNAPSHOT_ENABLED=true
-DATABASE_SNAPSHOT_INTERVAL_SECONDS=60
 
 DEFAULT_PAGE_SIZE=20
 LOG_RETENTION_DAYS=14
@@ -917,7 +914,7 @@ PUT /api/settings/theme
 功能：
 
 1. 查看任务列表。
-2. 手动刷新数据库快照。
+2. 手动检查数据库状态。
 3. 手动重建报表缓存。
 4. 健康检查。
 5. 清理旧日志。
@@ -959,7 +956,7 @@ PUT /api/settings/theme
 
 1. 查看飞牛数据库路径。
 2. 查看数据库挂载状态。
-3. 设置数据库刷新间隔。
+3. 查看源库只读直连状态。
 4. 设置默认分页数量。
 5. 设置日志保留天数。
 6. 修改主题。
@@ -1134,7 +1131,7 @@ viewer：只读查看
 1. 飞牛数据库必须只读连接。
 2. Docker Compose 必须只读挂载飞牛数据库。
 3. 任何写飞牛数据库的代码都不允许出现。
-4. 启动时检测数据库状态。
+4. V1 直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。
 5. 查询失败时返回清晰错误。
 6. 数据库路径不在前端暴露完整宿主机路径。
 
@@ -1456,7 +1453,7 @@ Docker 任务：
 
 功能：
 
-1. 手动刷新数据库快照。
+1. 手动检查数据库状态。
 2. 手动重建仪表盘缓存。
 3. 手动重建报表缓存。
 4. 健康检查。
@@ -1494,7 +1491,7 @@ Docker 任务：
 系统设置：
 
 1. 数据库状态查看。
-2. 数据库刷新间隔。
+2. 源库只读直连状态。
 3. 默认分页数量。
 4. 日志保留天数。
 5. 主题设置。

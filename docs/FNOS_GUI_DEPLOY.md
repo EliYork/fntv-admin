@@ -127,14 +127,14 @@ DOCKERHUB_TOKEN
 - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
 ```
 
-fntv-admin 使用 SQLite backup API 生成快照读取飞牛数据库：启动时以只读方式打开源库，使用 `sqlite3.Connection.backup()` 生成单文件快照到 `/data/cache/trimmedia.snapshot.db`，所有查询读取快照库。快照经过校验后原子替换，不写入源库、不 checkpoint 源库、不删除源库 wal/shm。快照不可用时自动降级为源库只读直连。
+fntv-admin V1 直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。后端使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON` 保护源库，不写入源库、不 checkpoint 源库、不删除或修改源库 wal/shm 文件。
 
 如果数据库状态异常，优先检查：
 
 1. `/usr/local/apps/@appdata/fntv-admin/data` 是否读写挂载到 `/data`。
 2. `/usr/local/apps/@appdata/trim.media/database` 是否只读挂载到 `/fntv`。
 3. `FNTV_DB_PATH` 是否仍为 `/fntv/trimmedia.db`。
-4. 系统设置页查看快照状态，尝试点击"刷新快照"。
+4. 系统设置页查看源库只读直连状态和 schema 诊断。
 
 如果不确定路径或担心影响原始数据，可以先复制一份 `trimmedia.db` 到 `test-db` 目录，用测试副本验证页面和数据库状态。
 

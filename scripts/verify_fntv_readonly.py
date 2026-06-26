@@ -14,7 +14,6 @@ ROOT = Path(__file__).resolve().parents[1]
 WRITE_KEYWORDS = ("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "VACUUM", "REINDEX", "CREATE")
 ALLOWED_FILES = {
     ROOT / "backend/app/db/fntv_readonly.py",
-    ROOT / "backend/app/db/fntv_snapshot.py",
     ROOT / "backend/app/models/admin.py",
     ROOT / "backend/app/db/admin_db.py",
     ROOT / "scripts/verify_fntv_readonly.py",

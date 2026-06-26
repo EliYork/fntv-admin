@@ -28,18 +28,15 @@ volumes:
 
 不要把飞牛影视数据库目录挂到 `/data`，也不要读写挂载飞牛影视数据库目录。
 
-## 快照机制
+## 源库只读直连
 
-飞牛数据库可能处于 SQLite WAL 模式，直接以只读方式打开原库时可能因为 `-wal`、`-shm` 文件或目录权限问题导致失败。fntv-admin 使用 SQLite backup API 生成一致性快照解决此问题：
+V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。
 
-1. 启动时以只读方式打开源库，使用 `sqlite3.Connection.backup()` 生成单文件快照到 `/data/cache/trimmedia.snapshot.db`。
-2. 快照经过 `PRAGMA quick_check` 校验后原子替换。
-3. 所有业务查询和 schema 探测读取快照库。
-4. 不写入源库，不 checkpoint 源库，不删除源库 wal/shm。
-5. 系统设置页可以手动刷新快照。
-6. 快照不可用时自动降级为源库只读直连。
+后端使用 SQLite URI `mode=ro` 打开飞牛数据库，并设置 `PRAGMA query_only = ON`。不执行 checkpoint、vacuum，不删除或修改飞牛源库的 wal/shm 文件。
 
-`/data` 必须读写挂载才能保存快照文件。`/fntv` 应尽量只读挂载；即使飞牛 UI 显示读写，后端仍然只读读取源库。
+`/data` 仍用于保存 `admin.db`、日志、缓存和备份。不要把飞牛影视数据库目录挂到 `/data`。
+
+如果飞牛 UI 中显示数据库目录为读写挂载，项目代码层仍使用只读连接保护源库。未来如需 snapshot，可作为 V2 优化另行实现。
 
 ## 镜像地址
 

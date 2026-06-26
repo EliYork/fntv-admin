@@ -10,7 +10,7 @@
 
 ## 会修改飞牛影视数据库吗？
 
-不会。飞牛数据库必须只读挂载，后端也使用只读 SQLite 连接。fntv-admin 使用 SQLite backup API 将源库以只读方式打开后生成本地快照到 `/data/cache/trimmedia.snapshot.db`，源库不会被修改、不会被 checkpoint、不会删除 wal/shm 文件。备注、隐藏状态、管理员账号、任务日志等增强数据只写入 `/data/admin.db`。
+不会。飞牛数据库必须只读挂载，后端也使用 SQLite URI `mode=ro` 打开 `/fntv/trimmedia.db`，并设置 `PRAGMA query_only = ON`。V1 不生成 snapshot 快照，不 checkpoint 源库，不删除或修改源库 wal/shm 文件。备注、隐藏状态、管理员账号、任务日志等增强数据只写入 `/data/admin.db`。
 
 ## 公网访问安全吗？
 
@@ -37,25 +37,17 @@
 
 ## 飞牛数据库报 "unable to open database file" 怎么办？
 
-这通常是因为飞牛数据库处于 SQLite WAL 模式，直接以只读方式打开原库时因为 `-wal`、`-shm` 文件或目录权限问题导致失败。
+V1 使用源库只读直连读取 `/fntv/trimmedia.db`。如果出现 `unable to open database file`，通常是挂载路径、文件权限或源库文件缺失导致后端无法只读打开数据库。
 
-fntv-admin 已通过 SQLite backup API 快照机制解决此问题：
+检查：
 
-1. 启动时以只读方式打开源库，使用 `sqlite3.Connection.backup()` 生成单文件快照。
-2. 快照经过 `PRAGMA quick_check` 校验后原子替换。
-3. 所有查询读取快照库，而非直接读取源库。
-4. 系统设置页显示当前数据源：快照、源库直连（降级）、未连接。
-5. 如果快照不可用，自动降级为源库只读直连。
-
-如果快照也失败，检查：
-
-1. `/data` 是否读写挂载。
-2. 源库文件是否完整。
-3. 系统设置页点击"刷新快照"重试。
+1. `/usr/local/apps/@appdata/trim.media/database` 是否挂载到 `/fntv`。
+2. 容器内 `/fntv/trimmedia.db` 是否存在。
+3. 飞牛数据库目录是否允许容器只读访问。
+4. 系统设置页点击"复制诊断信息"，查看 `availability` 和错误描述。
 
 不要做的事：
 
 1. 不要反复修改挂载路径。
 2. 不要将飞牛数据库改为读写挂载。
 3. 不要删除 `/data` 目录。
-

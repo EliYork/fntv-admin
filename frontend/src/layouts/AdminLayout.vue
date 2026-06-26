@@ -45,8 +45,8 @@ import { useAuthStore } from '../stores/auth'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const databaseChecking = ref(true)
 const databaseOk = ref(false)
-const databaseDegraded = ref(false)
 const refreshedAt = ref('-')
 const darkMode = ref(localStorage.getItem('fntv_theme') === 'dark')
 const drawerVisible = ref(false)
@@ -63,14 +63,14 @@ const navItems = [
 ]
 
 const databaseStatusType = computed(() => {
+  if (databaseChecking.value) return 'info'
   if (databaseOk.value) return 'success'
-  if (databaseDegraded.value) return 'warning'
   return 'danger'
 })
 
 const databaseStatusLabel = computed(() => {
+  if (databaseChecking.value) return '检查中'
   if (databaseOk.value) return '飞牛数据库正常'
-  if (databaseDegraded.value) return '源库直连降级'
   return '飞牛数据库异常'
 })
 
@@ -78,11 +78,10 @@ async function refreshDatabaseStatus() {
   try {
     const status = await fetchDatabaseStatus()
     databaseOk.value = status.fntv.availability === 'available'
-    databaseDegraded.value = status.fntv.availability === 'degraded'
   } catch {
     databaseOk.value = false
-    databaseDegraded.value = false
   } finally {
+    databaseChecking.value = false
     refreshedAt.value = new Date().toLocaleTimeString()
   }
 }

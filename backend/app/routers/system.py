@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_admin
 from app.core.response import ok
 from app.db.admin_db import get_session
-from app.db.fntv_snapshot import refresh_fntv_snapshot
 from app.services import system_service
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -18,8 +17,8 @@ def health():
 
 
 @router.get("/database-status")
-def database_status(_: object = Depends(get_current_admin)):
-    return ok(system_service.database_status())
+def database_status(detail: bool = Query(default=False), _: object = Depends(get_current_admin)):
+    return ok(system_service.database_status(detail=detail))
 
 
 @router.get("/storage-status")
@@ -34,4 +33,4 @@ def settings(db: Session = Depends(get_session), _: object = Depends(get_current
 
 @router.post("/refresh-snapshot")
 def refresh_snapshot(_: object = Depends(get_current_admin)):
-    return ok(refresh_fntv_snapshot())
+    return ok({"ok": False, "disabled": True, "message": "FNTV snapshot is disabled in V1; using readonly source database"})

@@ -16,12 +16,9 @@ services:
       APP_ENV: ${APP_ENV:-production}
       APP_SECRET_KEY: ${APP_SECRET_KEY:-change-me}
       FNTV_DB_PATH: ${FNTV_DB_PATH:-/fntv/trimmedia.db}
-      FNTV_SNAPSHOT_PATH: ${FNTV_SNAPSHOT_PATH:-/data/cache/trimmedia.snapshot.db}
       ADMIN_DB_PATH: ${ADMIN_DB_PATH:-/data/admin.db}
       LOG_DIR: ${LOG_DIR:-/data/logs}
       CACHE_DIR: ${CACHE_DIR:-/data/cache}
       BACKUP_DIR: ${BACKUP_DIR:-/data/backup}
-      DATABASE_SNAPSHOT_ENABLED: ${DATABASE_SNAPSHOT_ENABLED:-true}
-      DATABASE_SNAPSHOT_INTERVAL_SECONDS: ${DATABASE_SNAPSHOT_INTERVAL_SECONDS:-60}
       DEFAULT_PAGE_SIZE: ${DEFAULT_PAGE_SIZE:-20}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-14}

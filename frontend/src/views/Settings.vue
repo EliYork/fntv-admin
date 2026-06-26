@@ -26,26 +26,13 @@
     <div v-if="status" class="table-panel section">
       <div class="panel-title">快照</div>
       <el-descriptions :column="1" border>
-        <el-descriptions-item label="快照路径">{{ status.fntv.snapshot_path_container }}</el-descriptions-item>
-        <el-descriptions-item label="快照目录存在">{{ status.fntv.snapshot_dir_exists ? '是' : '否' }}</el-descriptions-item>
-        <el-descriptions-item label="快照目录可写">{{ status.fntv.snapshot_dir_writable ? '是' : '否' }}</el-descriptions-item>
-        <el-descriptions-item label="快照文件存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="快照状态">
-          <el-tag :type="snapshotStatusTag" size="small">
-            {{ status.fntv.snapshot_ok ? '正常' : '异常' }}
-          </el-tag>
+          <el-tag type="info" size="small">已禁用</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="最近刷新">{{ snapshotRefreshLabel }}</el-descriptions-item>
-        <el-descriptions-item v-if="status.fntv.snapshot_error" label="快照错误">{{ status.fntv.snapshot_error }}</el-descriptions-item>
-        <el-descriptions-item v-if="status.fntv.snapshot_error_type" label="错误类型">{{ status.fntv.snapshot_error_type }}</el-descriptions-item>
-        <el-descriptions-item v-if="status.fntv.snapshot_error_message" label="错误详情">{{ status.fntv.snapshot_error_message }}</el-descriptions-item>
         <el-descriptions-item label="当前数据源">
           <el-tag :type="activeDatabaseTag" size="small">{{ activeDatabaseLabel }}</el-tag>
         </el-descriptions-item>
       </el-descriptions>
-      <div class="sub-section">
-        <el-button type="primary" size="small" :loading="refreshing" @click="doRefresh">刷新快照</el-button>
-      </div>
     </div>
 
     <div v-if="status" class="table-panel section">
@@ -63,38 +50,14 @@
       </el-descriptions>
 
       <el-alert
-        v-if="status.fntv.source_direct_ok === false && status.fntv.snapshot_ok && status.fntv.ok"
-        type="warning"
-        show-icon
-        :closable="false"
-        style="margin-top: 12px"
-      >
-        <template #title>
-          源库直读失败，但快照读取成功。这通常是因为飞牛数据库处于 WAL 模式或目录权限限制，不影响正常使用。
-        </template>
-      </el-alert>
-
-      <el-alert
-        v-if="status.fntv.source_direct_ok === false && !status.fntv.snapshot_ok"
+        v-if="status.fntv.availability === 'unavailable'"
         type="error"
         show-icon
         :closable="false"
         style="margin-top: 12px"
       >
         <template #title>
-          源库直读失败，快照也不可用。请检查挂载路径和权限，或尝试手动刷新快照。
-        </template>
-      </el-alert>
-
-      <el-alert
-        v-if="status.fntv.source_direct_ok === true && !status.fntv.snapshot_ok"
-        type="warning"
-        show-icon
-        :closable="false"
-        style="margin-top: 12px"
-      >
-        <template #title>
-          快照创建失败，但源库直读正常。当前使用源库只读直连，不影响基本功能。快照错误：{{ status.fntv.snapshot_error_message || status.fntv.snapshot_error }}
+          源库只读直连失败。请检查 `/fntv/trimmedia.db` 挂载路径和权限。
         </template>
       </el-alert>
     </div>
@@ -206,12 +169,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { fetchDatabaseStatus, refreshSnapshot, type DatabaseStatus } from '../api/system'
+import { fetchDatabaseStatus, fetchDatabaseStatusDetail, type DatabaseStatus } from '../api/system'
 import EmptyState from '../components/EmptyState.vue'
 
 const status = ref<DatabaseStatus | null>(null)
 const theme = ref('system')
-const refreshing = ref(false)
 const copyDialogVisible = ref(false)
 const copyText = ref('')
 const copyTextareaRef = ref<InstanceType<typeof import('element-plus')['ElInput']> | null>(null)
@@ -230,49 +192,32 @@ const sourceDirectLabel = computed(() => {
   const v = status.value.fntv.source_direct_ok
   if (v === null) return '未检测'
   if (v) return '成功'
-  return status.value.fntv.snapshot_ok ? '失败（使用快照）' : '失败'
+  return '失败'
 })
 
 const databaseAvailabilityLabel = computed(() => {
   if (!status.value) return '-'
   if (status.value.fntv.availability === 'available') return '飞牛数据库正常'
-  if (status.value.fntv.availability === 'degraded') return '源库直连降级'
   return '飞牛数据库异常'
 })
 
 const databaseAvailabilityTag = computed(() => {
   if (!status.value) return 'info'
   if (status.value.fntv.availability === 'available') return 'success'
-  if (status.value.fntv.availability === 'degraded') return 'warning'
   return 'danger'
-})
-
-const snapshotStatusTag = computed(() => {
-  if (!status.value) return 'info'
-  if (status.value.fntv.snapshot_ok) return 'success'
-  return status.value.fntv.availability === 'degraded' ? 'warning' : 'danger'
-})
-
-const snapshotRefreshLabel = computed(() => {
-  if (!status.value) return '-'
-  const ts = status.value.fntv.snapshot_last_refresh_at
-  if (!ts) return '未刷新'
-  return new Date(ts * 1000).toLocaleString()
 })
 
 const activeDatabaseLabel = computed(() => {
   if (!status.value) return '-'
   const v = status.value.fntv.active_database
-  if (v === 'snapshot') return '快照'
-  if (v === 'source') return '源库直连（降级）'
+  if (v === 'source') return '源库只读直连'
   return '未连接'
 })
 
 const activeDatabaseTag = computed(() => {
   if (!status.value) return 'info'
   const v = status.value.fntv.active_database
-  if (v === 'snapshot') return 'success'
-  if (v === 'source') return 'warning'
+  if (v === 'source') return 'success'
   return 'danger'
 })
 
@@ -284,65 +229,44 @@ async function loadStatus() {
   status.value = await fetchDatabaseStatus()
 }
 
-async function doRefresh() {
-  refreshing.value = true
-  try {
-    const result = await refreshSnapshot()
-    if (result.ok) {
-      ElMessage.success('快照刷新成功')
-    } else {
-      ElMessage.error(`快照刷新失败: ${result.error}`)
-    }
-  } catch {
-    ElMessage.error('快照刷新请求失败')
-  } finally {
-    refreshing.value = false
-    await loadStatus()
-  }
-}
-
-function buildDiagnosticsJson(): string {
-  if (!status.value) return '{}'
+function buildDiagnosticsJson(source: DatabaseStatus | null = status.value): string {
+  if (!source) return '{}'
   const diag = {
     fntv: {
-      ok: status.value.fntv.ok,
-      source_exists: status.value.fntv.source_exists,
-      source_readable: status.value.fntv.source_readable,
-      source_direct_ok: status.value.fntv.source_direct_ok,
-      active_database: status.value.fntv.active_database,
-      active_db_path: status.value.fntv.active_db_path ?? null,
-      fallback_to_source: status.value.fntv.fallback_to_source,
-      availability: status.value.fntv.availability ?? databaseAvailabilityLabel.value,
-      degraded: status.value.fntv.degraded ?? status.value.fntv.availability === 'degraded',
-      warnings: status.value.fntv.warnings ?? [],
-      snapshot_exists: status.value.fntv.snapshot_exists,
-      snapshot_dir_exists: status.value.fntv.snapshot_dir_exists,
-      snapshot_dir_writable: status.value.fntv.snapshot_dir_writable,
-      snapshot_ok: status.value.fntv.snapshot_ok,
-      snapshot_error: status.value.fntv.snapshot_error ?? null,
-      snapshot_error_type: status.value.fntv.snapshot_error_type ?? null,
-      snapshot_error_message: status.value.fntv.snapshot_error_message ?? null,
-      snapshot_last_refresh_at: status.value.fntv.snapshot_last_refresh_at,
-      error: status.value.fntv.error ?? null,
-      error_type: status.value.fntv.error_type ?? null,
-      error_message: status.value.fntv.error_message ?? null,
-      detected_table_count: status.value.fntv.detected_table_count ?? 0,
-      detected_tables: status.value.fntv.detected_tables ?? [],
-      detected_columns_by_table: status.value.fntv.detected_columns_by_table ?? {},
-      core_candidates: status.value.fntv.core_candidates ?? {},
-      required_tables_status: status.value.fntv.required_tables_status ?? {},
-      capabilities: status.value.fntv.capabilities ?? {},
+      ok: source.fntv.ok,
+      source_exists: source.fntv.source_exists,
+      source_readable: source.fntv.source_readable,
+      source_direct_ok: source.fntv.source_direct_ok,
+      active_database: source.fntv.active_database,
+      active_db_path: source.fntv.active_db_path ?? null,
+      availability: source.fntv.availability ?? null,
+      snapshot_enabled: source.fntv.snapshot_enabled ?? false,
+      error: source.fntv.error ?? null,
+      error_type: source.fntv.error_type ?? null,
+      error_message: source.fntv.error_message ?? null,
+      detected_table_count: source.fntv.detected_table_count ?? 0,
+      detected_tables: source.fntv.detected_tables ?? [],
+      detected_columns_by_table: source.fntv.detected_columns_by_table ?? {},
+      core_candidates: source.fntv.core_candidates ?? {},
+      required_tables_status: source.fntv.required_tables_status ?? {},
+      capabilities: source.fntv.capabilities ?? {},
     },
     admin: {
-      exists: status.value.admin.exists,
-      ok: status.value.admin.ok,
+      exists: source.admin.exists,
+      ok: source.admin.ok,
     },
   }
   return JSON.stringify(diag, null, 2)
 }
 
-function copyDiagnostics() {
-  const text = buildDiagnosticsJson()
+async function copyDiagnostics() {
+  let detailStatus = status.value
+  try {
+    detailStatus = await fetchDatabaseStatusDetail()
+  } catch {
+    detailStatus = status.value
+  }
+  const text = buildDiagnosticsJson(detailStatus)
   if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
     navigator.clipboard.writeText(text).then(() => {
       ElMessage.success('已复制诊断信息')

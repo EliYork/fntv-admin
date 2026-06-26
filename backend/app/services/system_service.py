@@ -9,10 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.fntv_readonly import assert_readonly_write_fails, open_fntv_connection
+from app.db.fntv_readonly import open_fntv_connection
 from app.db.fntv_snapshot import (
-    copy_fntv_snapshot,
-    refresh_fntv_snapshot,
     resolve_active_fntv_database,
     snapshot_status,
 )
@@ -31,13 +29,9 @@ def startup_check() -> None:
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     run_migrations()
     if settings.fntv_db_path.exists():
-        result = copy_fntv_snapshot()
-        if result.get("ok"):
-            logger.info("initial fntv snapshot created")
-        else:
-            logger.warning("initial fntv snapshot failed: %s", result.get("error"))
+        logger.info("fntv source database configured for readonly direct access")
     else:
-        logger.info("fntv source database not found, skipping initial snapshot")
+        logger.info("fntv source database not found; app will report database unavailable")
 
 
 def storage_status() -> dict[str, Any]:
@@ -55,21 +49,18 @@ def storage_status() -> dict[str, Any]:
     return {"ok": all(item["exists"] and item["writable"] for item in items), "items": items}
 
 
-def database_status() -> dict[str, Any]:
+def database_status(detail: bool = False) -> dict[str, Any]:
     snap_info = snapshot_status()
     resolved = resolve_active_fntv_database()
-    warnings: list[dict[str, str | None]] = []
-    if snap_info["snapshot_error"]:
-        warnings.append({
-            "code": snap_info["snapshot_error"],
-            "type": snap_info["snapshot_error_type"],
-            "message": snap_info["snapshot_error_message"],
-        })
     fntv: dict[str, Any] = {
+        "path": snap_info["source_path_container"],
+        "exists": snap_info["source_exists"],
+        "readonly": True,
         "source_path_container": snap_info["source_path_container"],
         "source_exists": snap_info["source_exists"],
         "source_readable": snap_info["source_readable"],
         "source_readonly_configured": snap_info["source_readonly_configured"],
+        "snapshot_enabled": False,
         "snapshot_path_container": snap_info["snapshot_path_container"],
         "snapshot_exists": snap_info["snapshot_exists"],
         "snapshot_dir_exists": snap_info["snapshot_dir_exists"],
@@ -84,13 +75,13 @@ def database_status() -> dict[str, Any]:
         "error": None,
         "error_type": None,
         "error_message": None,
-        "warnings": warnings,
+        "warnings": [],
         "source_direct_ok": resolved["source_direct_ok"],
         "active_database": resolved["active_database"],
         "active_db_path": resolved["active_db_path"],
         "availability": resolved["availability"],
-        "degraded": resolved["degraded"],
-        "fallback_to_source": resolved["active_database"] == "source",
+        "degraded": False,
+        "fallback_to_source": False,
         "detected_table_count": 0,
         "detected_tables": [],
         "detected_columns_by_table": {},
@@ -109,14 +100,13 @@ def database_status() -> dict[str, Any]:
     if resolved["active_database"] == "none":
         fntv["error"] = "FNTV_DATABASE_UNAVAILABLE"
         fntv["error_type"] = "DatabaseUnavailable"
-        fntv["error_message"] = "飞牛影视数据库不可用，请检查快照或源库只读挂载"
+        fntv["error_message"] = "飞牛影视数据库不可用，请检查源库只读挂载"
     else:
         try:
             with open_fntv_connection() as conn:
-                diag = schema_diagnostics(conn=conn, active_db_path=resolved["active_db_path"])
+                diag = schema_diagnostics(conn=conn, active_db_path=resolved["active_db_path"], detail=detail)
             fntv.update(diag)
             fntv["ok"] = bool(diag.get("ok"))
-            fntv["write_probe_failed"] = assert_readonly_write_fails()
             if fntv["ok"]:
                 fntv["error"] = None
                 fntv["error_type"] = None

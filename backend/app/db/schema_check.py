@@ -84,7 +84,7 @@ def schema_status() -> dict[str, Any]:
     }
 
 
-def schema_diagnostics(conn: sqlite3.Connection | None = None, active_db_path: str | Path | None = None) -> dict[str, Any]:
+def schema_diagnostics(conn: sqlite3.Connection | None = None, active_db_path: str | Path | None = None, detail: bool = False) -> dict[str, Any]:
     result: dict[str, Any] = {
         "ok": False,
         "error": None,
@@ -114,7 +114,7 @@ def schema_diagnostics(conn: sqlite3.Connection | None = None, active_db_path: s
         for tname, table in tables.items():
             columns_by_table[tname] = table.columns
 
-        result["detected_columns_by_table"] = columns_by_table
+        result["detected_columns_by_table"] = columns_by_table if detail else {}
 
         user_table = find_table(tables, CORE_TABLE_HINTS["user"])
         item_table = find_table(tables, CORE_TABLE_HINTS["item"])
