@@ -70,6 +70,8 @@ PM2 部署
 
 项目可以在开发环境本地启动前后端，但这不是官方生产部署方式。
 
+飞牛 NAS 默认推荐拉取 GHCR 成品镜像运行，不要求在飞牛本机 build 镜像。
+
 ---
 
 ### 4.2 单容器生产部署
@@ -87,9 +89,10 @@ fntv-admin 容器
 
 用户只需要：
 
-1. 挂载项目数据目录 `/data`
-2. 只读挂载飞牛影视数据库 `/fntv/trimmedia.db`
-3. 启动 Docker Compose
+1. 配置 GHCR 镜像地址
+2. 挂载项目数据目录 `/data`
+3. 只读挂载飞牛影视数据库 `/fntv/trimmedia.db`
+4. 启动 Docker Compose
 
 ---
 
@@ -422,7 +425,7 @@ fntv-admin/
 ```yaml
 services:
   fntv-admin:
-    image: fntv-admin:latest
+    image: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USERNAME/fntv-admin:latest
     container_name: fntv-admin
     restart: unless-stopped
     ports:
@@ -432,17 +435,17 @@ services:
       - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
     environment:
       APP_ENV: production
-      APP_SECRET_KEY: change-me
+      APP_SECRET_KEY: change-me-please
       FNTV_DB_PATH: /fntv/trimmedia.db
       ADMIN_DB_PATH: /data/admin.db
       LOG_DIR: /data/logs
       CACHE_DIR: /data/cache
       BACKUP_DIR: /data/backup
-      DATABASE_SNAPSHOT_ENABLED: "true"
-      DATABASE_SNAPSHOT_INTERVAL_SECONDS: "60"
       DEFAULT_PAGE_SIZE: "20"
       LOG_RETENTION_DAYS: "14"
 ```
+
+开发者本地构建使用 `docker-compose.build.yml`，不是飞牛部署默认路径。
 
 ---
 

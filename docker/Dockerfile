@@ -10,6 +10,10 @@ RUN npm run build
 FROM python:3.12-slim AS runtime
 WORKDIR /app
 
+LABEL org.opencontainers.image.source="https://github.com/OWNER/fntv-admin" \
+      org.opencontainers.image.description="Docker Compose-first Feiniu TV enhanced admin console" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -24,4 +28,3 @@ RUN mkdir -p /data/logs /data/cache /data/backup /fntv
 EXPOSE 8080
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
-

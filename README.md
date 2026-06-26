@@ -2,9 +2,12 @@
 
 `fntv-admin` 是从零开发的飞牛影视增强管理后台。项目官方只支持 Docker Compose 部署，生产环境优先使用一个容器运行 FastAPI 后端和 Vue 构建后的静态前端。
 
+飞牛 NAS 推荐直接拉取 GitHub Container Registry（GHCR）成品镜像运行，不推荐在飞牛本机 build 镜像。这样可以避开飞牛本机拉取 `node:22-alpine`、`python:3.12-slim` 等构建基础镜像超时的问题。
+
 核心边界：
 
 - Docker Compose 是唯一官方部署入口。
+- 默认部署使用 GHCR 成品镜像。
 - 飞牛影视数据库只读挂载到 `/fntv/trimmedia.db`。
 - 所有增强数据写入 `/data/admin.db`。
 - 所有可变数据都保存在 `/data`。
@@ -12,20 +15,14 @@
 
 ## 快速开始
 
-1. 复制环境变量示例：
+1. 复制 `docker-compose.yml` 到飞牛 NAS 的应用目录。
 
-```bash
-cp .env.example .env
-```
-
-2. 编辑 `docker-compose.yml`，把飞牛影视数据库宿主机路径改成真实路径，并保留 `:ro`：
+2. 修改镜像地址，把 `REPLACE_WITH_YOUR_GITHUB_USERNAME` 改成 GitHub 用户名或组织名：
 
 ```yaml
 services:
   fntv-admin:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/REPLACE_WITH_YOUR_GITHUB_USERNAME/fntv-admin:latest
     container_name: fntv-admin
     restart: unless-stopped
     ports:
@@ -33,22 +30,57 @@ services:
     volumes:
       - ./data:/data
       - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+    environment:
+      APP_ENV: production
+      APP_SECRET_KEY: change-me-please
+      FNTV_DB_PATH: /fntv/trimmedia.db
+      ADMIN_DB_PATH: /data/admin.db
+      LOG_DIR: /data/logs
+      CACHE_DIR: /data/cache
+      BACKUP_DIR: /data/backup
+      DEFAULT_PAGE_SIZE: "20"
+      LOG_RETENTION_DAYS: "14"
 ```
 
-3. 启动：
+3. 把 `/path/to/trimmedia.db` 改成飞牛影视数据库的真实宿主机路径，并保留 `:ro`。
+
+4. 启动：
 
 ```bash
-docker compose build
 docker compose up -d
 ```
 
-4. 打开：
+5. 打开：
 
 ```text
 http://localhost:8080
 ```
 
+在飞牛 NAS 上访问时，把 `localhost` 换成飞牛 IP：
+
+```text
+http://飞牛IP:8080
+```
+
 首次进入时创建管理员账号。管理员密码只会以 hash 形式写入 `/data/admin.db`。
+
+## GHCR 镜像
+
+GitHub Actions 会在以下场景构建并推送镜像到 GHCR：
+
+- push 到 `main` 分支。
+- push `v*.*.*` 版本 tag。
+- 手动触发 `workflow_dispatch`。
+
+镜像名格式：
+
+```text
+ghcr.io/<GitHub 用户名或组织名>/fntv-admin:latest
+ghcr.io/<GitHub 用户名或组织名>/fntv-admin:sha-<git-sha>
+ghcr.io/<GitHub 用户名或组织名>/fntv-admin:<tag>
+```
+
+如果仓库默认分支不是 `main`，需要在 `.github/workflows/docker-image.yml` 中把触发分支改成实际默认分支。
 
 ## 数据持久化
 
@@ -82,6 +114,19 @@ python scripts/inspect_fntv_db.py /path/to/trimmedia.db
 
 该命令仅用于开发诊断，不是官方生产部署方式。
 
+## 开发者本地构建
+
+以下命令仅用于开发者本地测试，不是官方生产部署方式，也不是飞牛可视化部署默认路径：
+
+```bash
+docker compose -f docker-compose.build.yml build
+docker compose -f docker-compose.build.yml up -d
+```
+
+## 飞牛可视化部署
+
+飞牛 Docker 可视化界面部署步骤见 [docs/FNOS_GUI_DEPLOY.md](docs/FNOS_GUI_DEPLOY.md)。
+
 ## 当前阶段
 
 当前实现覆盖 Phase 0 到 Phase 6 的基础骨架：
@@ -89,9 +134,9 @@ python scripts/inspect_fntv_db.py /path/to/trimmedia.db
 - Docker Compose-first 项目结构。
 - FastAPI 后端与 Vue 前端。
 - 单容器生产 Dockerfile。
+- GHCR 自动构建发布 workflow。
 - 启动检查、健康检查、数据库状态。
 - 首次管理员初始化、登录、退出、当前用户、修改密码。
 - 仪表盘、观看历史、用户管理、媒体库基础 API 与页面。
 
 飞牛数据库表结构不确定时，页面会显示空状态或数据库异常提示，不会导致应用崩溃。
-

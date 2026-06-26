@@ -1,0 +1,26 @@
+services:
+  fntv-admin:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: fntv-admin:local
+    container_name: fntv-admin
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+    environment:
+      APP_NAME: ${APP_NAME:-fntv-admin}
+      APP_ENV: ${APP_ENV:-production}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-change-me}
+      FNTV_DB_PATH: ${FNTV_DB_PATH:-/fntv/trimmedia.db}
+      ADMIN_DB_PATH: ${ADMIN_DB_PATH:-/data/admin.db}
+      LOG_DIR: ${LOG_DIR:-/data/logs}
+      CACHE_DIR: ${CACHE_DIR:-/data/cache}
+      BACKUP_DIR: ${BACKUP_DIR:-/data/backup}
+      DATABASE_SNAPSHOT_ENABLED: ${DATABASE_SNAPSHOT_ENABLED:-true}
+      DATABASE_SNAPSHOT_INTERVAL_SECONDS: ${DATABASE_SNAPSHOT_INTERVAL_SECONDS:-60}
+      DEFAULT_PAGE_SIZE: ${DEFAULT_PAGE_SIZE:-20}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-14}

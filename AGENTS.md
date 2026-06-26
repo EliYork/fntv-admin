@@ -63,6 +63,24 @@ frontend/
 
 ---
 
+### 2.2.1 默认部署优先 GHCR 成品镜像
+
+官方 Docker Compose 部署文档默认应优先使用 GHCR 成品镜像：
+
+```text
+ghcr.io/<GitHub 用户或组织>/fntv-admin:latest
+```
+
+飞牛 NAS 不要求本机构建镜像。
+
+`docker-compose.yml` 默认使用 `image`。
+
+`docker-compose.build.yml` 仅用于开发者本地构建和测试。
+
+不要把 `build` 作为飞牛可视化部署默认路径。
+
+---
+
 ### 2.3 禁止写入飞牛影视数据库
 
 飞牛影视数据库只能只读读取。
@@ -428,6 +446,17 @@ volumes:
   - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
 ```
 
+默认 `docker-compose.yml` 应拉取 GHCR 成品镜像，不默认执行本地构建。
+
+开发者本地构建必须使用：
+
+```bash
+docker compose -f docker-compose.build.yml build
+docker compose -f docker-compose.build.yml up -d
+```
+
+以上命令仅用于开发，不是官方生产部署方式，也不是飞牛可视化部署默认路径。
+
 ---
 
 ### 6.2 容器路径
@@ -747,13 +776,19 @@ Thumbs.db
 每次修改后至少验证：
 
 ```text
-docker compose build 成功
+docker compose pull 或 docker compose config 成功
 docker compose up -d 成功
 /api/system/health 正常
 前端页面可打开
 /data/admin.db 可创建
 飞牛数据库不存在时不崩溃
 飞牛数据库只读挂载时可读取
+```
+
+如需验证本地构建，只能使用：
+
+```text
+docker compose -f docker-compose.build.yml build 成功
 ```
 
 ---
