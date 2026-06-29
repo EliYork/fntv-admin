@@ -49,6 +49,7 @@ import { useRouter } from 'vue-router'
 import { ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { fetchDashboardOverview, fetchRecentActivities, type DashboardOverview, type HistoryItem } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
+import { useRouteRefresh } from '../utils/routeRefresh'
 
 const router = useRouter()
 const overview = ref<DashboardOverview | null>(null)
@@ -73,6 +74,7 @@ async function loadData() {
 }
 
 onMounted(loadData)
+useRouteRefresh(loadData)
 </script>
 
 <style scoped>

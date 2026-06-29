@@ -139,6 +139,8 @@ import {
   type TopMediaReportItem,
   type TopUserReportItem
 } from '../api/modules'
+import { useAuthStore } from '../stores/auth'
+import { useRouteRefresh } from '../utils/routeRefresh'
 
 type RangeKey = '7' | '30' | '90' | 'all'
 
@@ -155,6 +157,7 @@ interface ListState<T> {
 }
 
 const selectedDays = ref<RangeKey>('30')
+const auth = useAuthStore()
 const rangeOptions: Array<{ label: string; value: RangeKey }> = [
   { label: '7 天', value: '7' },
   { label: '30 天', value: '30' },
@@ -219,6 +222,7 @@ function trendDays(): number {
 }
 
 async function loadRangeData() {
+  if (!(await ensureAuthReady())) return
   await Promise.all([
     loadList(trend, () => fetchReportPlayTrend(trendDays())),
     loadList(topUsers, () => fetchReportTopUsers({ days: selectedDays.value, limit: 10 })),
@@ -228,11 +232,24 @@ async function loadRangeData() {
 }
 
 async function loadAll() {
+  if (!(await ensureAuthReady())) return
   await Promise.all([
     loadDetail(overview, fetchReportOverview),
     loadRangeData(),
     loadList(mediaTypes, fetchReportMediaTypeDistribution)
   ])
+}
+
+async function ensureAuthReady(): Promise<boolean> {
+  if (!auth.isAuthenticated) return false
+  if (!auth.user) {
+    try {
+      await auth.loadMe()
+    } catch {
+      return false
+    }
+  }
+  return true
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -263,6 +280,7 @@ function errorMessage(error: unknown): string {
 }
 
 onMounted(loadAll)
+useRouteRefresh(loadAll)
 </script>
 
 <style scoped>

@@ -57,6 +57,7 @@ import { fetchMedia, hideMedia, type MediaItem } from '../api/modules'
 import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
+import { useRouteRefresh } from '../utils/routeRefresh'
 
 const keyword = ref('')
 const mediaType = ref('')
@@ -100,4 +101,5 @@ async function toggleHidden(guid: string, hidden: boolean) {
 }
 
 onMounted(loadData)
+useRouteRefresh(loadData)
 </script>

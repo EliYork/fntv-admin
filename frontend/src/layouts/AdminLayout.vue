@@ -2,7 +2,7 @@
   <el-container class="admin-shell">
     <el-aside class="admin-aside" width="232px">
       <div class="brand">fntv-admin</div>
-      <el-menu :default-active="route.path" router class="nav-menu">
+      <el-menu :default-active="route.path" class="nav-menu" @select="handleMenuSelect">
         <el-menu-item v-for="item in navItems" :key="item.path" :index="item.path">
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ item.label }}</span>
@@ -36,20 +36,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { DataAnalysis, Document, Files, Film, HomeFilled, Setting, SwitchButton, User, Tickets } from '@element-plus/icons-vue'
+import { DataAnalysis, Document, Files, Film, HomeFilled, Monitor, Setting, SwitchButton, User, Tickets } from '@element-plus/icons-vue'
 import { fetchDatabaseStatus } from '../api/system'
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const theme = useThemeStore()
 const databaseChecking = ref(true)
 const databaseOk = ref(false)
 const refreshedAt = ref('-')
-const darkMode = ref(localStorage.getItem('fntv_theme') === 'dark')
 const drawerVisible = ref(false)
+theme.init()
+
+const darkMode = computed({
+  get: () => theme.resolved === 'dark',
+  set: (enabled: boolean) => theme.setMode(enabled ? 'dark' : 'light')
+})
 
 const navItems = [
   { path: '/dashboard', label: '仪表盘', icon: HomeFilled },
@@ -59,7 +66,8 @@ const navItems = [
   { path: '/reports', label: '报表中心', icon: DataAnalysis },
   { path: '/tasks', label: '任务中心', icon: Tickets },
   { path: '/logs', label: '日志中心', icon: Files },
-  { path: '/settings', label: '系统设置', icon: Setting }
+  { path: '/settings', label: '系统设置', icon: Setting },
+  { path: '/diagnostics', label: '系统诊断', icon: Monitor }
 ]
 
 const databaseStatusType = computed(() => {
@@ -91,18 +99,15 @@ async function handleLogout() {
   await router.push('/login')
 }
 
-const asideBackground = computed(() => (darkMode.value ? '#182033' : '#ffffff'))
+async function handleMenuSelect(path: string) {
+  if (path === route.path) {
+    await router.replace({ path, query: { ...route.query, refresh: String(Date.now()) } })
+    return
+  }
+  await router.push(path)
+}
 
 onMounted(refreshDatabaseStatus)
-
-watch(
-  darkMode,
-  (enabled) => {
-    localStorage.setItem('fntv_theme', enabled ? 'dark' : 'light')
-    document.documentElement.dataset.theme = enabled ? 'dark' : 'light'
-  },
-  { immediate: true }
-)
 </script>
 
 <style scoped>
@@ -111,8 +116,8 @@ watch(
 }
 
 .admin-aside {
-  border-right: 1px solid #dde3ee;
-  background: v-bind(asideBackground);
+  border-right: 1px solid var(--app-border);
+  background: var(--app-sidebar-bg);
 }
 
 .brand {
@@ -122,7 +127,7 @@ watch(
   padding: 0 20px;
   font-size: 18px;
   font-weight: 750;
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .nav-menu {
@@ -132,8 +137,8 @@ watch(
 
 .topbar {
   height: 58px;
-  border-bottom: 1px solid #dde3ee;
-  background: #fff;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -150,34 +155,33 @@ watch(
 
 .refresh-time,
 .drawer-text {
-  color: #6b7280;
+  color: var(--app-muted);
 }
 
 .main-view {
   padding: 22px;
-  background: #f5f7fb;
+  background: var(--app-bg);
 }
 
 :global([data-theme='dark']) .topbar,
 :global([data-theme='dark']) .admin-aside {
-  border-color: #30394d;
-  background: #182033;
+  border-color: var(--app-border);
 }
 
 :global([data-theme='dark']) .brand {
-  color: #8fb4ff;
+  color: var(--app-accent);
 }
 
 :global([data-theme='dark']) .main-view {
-  background: #111827;
+  background: var(--app-bg);
 }
 
 :global([data-theme='dark']) .nav-menu :deep(.el-menu-item) {
-  color: #d5dbea;
+  color: var(--app-text);
 }
 
 :global([data-theme='dark']) .nav-menu :deep(.el-menu-item.is-active) {
-  color: #8fb4ff;
+  color: var(--app-accent);
 }
 
 @media (max-width: 760px) {

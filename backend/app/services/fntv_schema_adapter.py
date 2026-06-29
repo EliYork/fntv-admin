@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import csv
 import io
+import os
+import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -44,6 +47,10 @@ ITEM_FIELD_PRIORITIES = {
     "season_number": ("season_number", "season_index", "season"),
     "episode_number": ("episode_number", "episode_index", "episode"),
 }
+
+HASH_LIKE_RE = re.compile(r"^[0-9a-f]{24,64}$", re.IGNORECASE)
+UUID_LIKE_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+LONG_NUMERIC_ID_RE = re.compile(r"^\d{12,}$")
 
 PLAY_FIELD_PRIORITIES = {
     "id": ("id", "guid", "uuid"),
@@ -417,6 +424,28 @@ def _play_time_expr(schema: FntvSchemaInfo, alias: str | None = None) -> str | N
     return expressions[0] if len(expressions) == 1 else f"COALESCE({', '.join(expressions)})"
 
 
+def _timestamp_seconds_expr(expr: str) -> str:
+    return f"(CASE WHEN {expr} IS NULL THEN NULL WHEN CAST({expr} AS REAL) > 1000000000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
+
+
+def _app_timezone() -> ZoneInfo | None:
+    tz_name = os.getenv("TZ") or "Asia/Shanghai"
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return None
+
+
+def _local_day_bounds(now: datetime | None = None) -> tuple[int, int]:
+    timezone = _app_timezone()
+    current = now or (datetime.now(timezone) if timezone else datetime.now().astimezone())
+    if timezone and current.tzinfo is None:
+        current = current.replace(tzinfo=timezone)
+    start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return int(start.timestamp()), int(end.timestamp())
+
+
 def _play_time_value(row: dict[str, Any], schema: FntvSchemaInfo) -> Any:
     for column in _play_time_columns(schema):
         value = row.get(column)
@@ -475,9 +504,11 @@ def _count_today_plays(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int:
     time_expr = _play_time_expr(schema)
     if not table or not time_expr:
         return 0
-    start = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-    where = [f"{time_expr} >= ?"]
-    params: list[Any] = [start]
+    seconds_expr = _timestamp_seconds_expr(time_expr)
+    # Use TZ when configured, otherwise Asia/Shanghai, so "today" matches common FNOS deployments.
+    start, end = _local_day_bounds()
+    where = [f"{seconds_expr} >= ?", f"{seconds_expr} < ?"]
+    params: list[Any] = [start, end]
     visible = _visible_clause(schema)
     if visible:
         where.append(visible)
@@ -733,7 +764,8 @@ def _media_row(row: dict[str, Any], schema: FntvSchemaInfo, profiles: dict[str, 
     guid = str(_row_value(row, schema.items.fields.get("guid")) or "")
     profile = profiles.get(guid)
     raw_title = _display_item(row, schema) or guid
-    title = profile.display_title if profile and profile.display_title else raw_title
+    fallback_title = _media_hierarchy_fallback_title(row, schema, parent_titles) or raw_title
+    title = profile.display_title if profile and profile.display_title else fallback_title
     row_stats = stats.get(guid, {})
     runtime_seconds = normalize_duration_seconds(_row_value(row, schema.items.fields.get("runtime")))
     parent_guid = str(_row_value(row, schema.items.fields.get("parent_guid")) or "")
@@ -754,6 +786,29 @@ def _media_row(row: dict[str, Any], schema: FntvSchemaInfo, profiles: dict[str, 
         "favorite": bool(profile.favorite) if profile else False,
         "note": profile.note if profile else None,
     }
+
+
+def _media_hierarchy_fallback_title(row: dict[str, Any], schema: FntvSchemaInfo, parent_titles: dict[str, str]) -> str | None:
+    base_title = _display_item(row, schema)
+    media_type = str(_row_value(row, schema.items.fields.get("media_type")) or "").lower()
+    parent_guid = str(_row_value(row, schema.items.fields.get("parent_guid")) or "")
+    parent_title = parent_titles.get(parent_guid) or ""
+    season = _row_value(row, schema.items.fields.get("season_number"))
+    episode = _row_value(row, schema.items.fields.get("episode_number"))
+    marker = _season_episode_marker(season, episode)
+    if media_type == "season" and marker and parent_title:
+        return f"{parent_title} - {marker}"
+    if media_type == "episode":
+        if parent_title and marker:
+            return " - ".join(part for part in (_strip_trailing_season_marker(parent_title, marker), marker, base_title) if part)
+        if parent_title and base_title:
+            return f"{parent_title} - {base_title}"
+    return base_title
+
+
+def _strip_trailing_season_marker(title: str, episode_marker: str) -> str:
+    season_marker = episode_marker.split("E", 1)[0]
+    return re.sub(rf"\s+-\s+{re.escape(season_marker)}$", "", title).strip()
 
 
 def _user_stats_for(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: list[Any]) -> dict[str, dict[str, Any]]:
@@ -907,12 +962,61 @@ def _display_user(row: dict[str, Any], schema: FntvSchemaInfo) -> str | None:
 
 
 def _display_item(row: dict[str, Any], schema: FntvSchemaInfo) -> str | None:
-    for key in ("title", "original_title", "filename", "name", "guid"):
-        value = row.get(key)
-        if value not in (None, ""):
-            return str(value)
-    mapped = _row_value(row, schema.items.fields.get("title"))
-    return str(mapped) if mapped not in (None, "") else None
+    candidates = [
+        row.get("title"),
+        _row_value(row, schema.items.fields.get("title")),
+        row.get("original_title"),
+        _row_value(row, schema.items.fields.get("original_title")),
+        row.get("filename"),
+        _basename_from_path(row.get("filename")),
+        _basename_from_path(row.get("path")),
+        _basename_from_path(row.get("file_path")),
+        _basename_from_path(row.get("filepath")),
+        row.get("name"),
+    ]
+    media_type = str(_row_value(row, schema.items.fields.get("media_type")) or row.get("type") or "").lower()
+    for value in candidates:
+        text = _clean_display_text(value)
+        if text and not _is_generic_media_title(text, media_type):
+            return text
+    return None
+
+
+def _clean_display_text(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    if not text or _is_meaningless_identifier(text):
+        return None
+    return text
+
+
+def _basename_from_path(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip().replace("\\", "/").rstrip("/")
+    if not text:
+        return None
+    return text.rsplit("/", 1)[-1]
+
+
+def _is_meaningless_identifier(value: str) -> bool:
+    text = value.strip()
+    if UUID_LIKE_RE.fullmatch(text):
+        return True
+    compact = text.replace("-", "")
+    if HASH_LIKE_RE.fullmatch(compact):
+        return True
+    return bool(LONG_NUMERIC_ID_RE.fullmatch(text))
+
+
+def _is_generic_media_title(value: str, media_type: str) -> bool:
+    if media_type not in {"season", "episode"}:
+        return False
+    text = value.strip().lower()
+    if text.isdigit():
+        return True
+    return bool(re.fullmatch(r"(season|s)\s*0*\d+", text))
 
 
 def _row_value(row: dict[str, Any], column: str | None) -> Any:

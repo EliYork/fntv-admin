@@ -15,7 +15,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'reports', name: 'reports', component: () => import('../views/Reports.vue') },
       { path: 'tasks', name: 'tasks', component: () => import('../views/Tasks.vue') },
       { path: 'logs', name: 'logs', component: () => import('../views/Logs.vue') },
-      { path: 'settings', name: 'settings', component: () => import('../views/Settings.vue') }
+      { path: 'settings', name: 'settings', component: () => import('../views/SystemSettings.vue') },
+      { path: 'diagnostics', name: 'diagnostics', component: () => import('../views/Diagnostics.vue') }
     ]
   }
 ]
@@ -41,4 +42,3 @@ router.beforeEach(async (to) => {
 })
 
 export default router
-

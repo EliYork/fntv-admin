@@ -19,6 +19,14 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     const message = error.response?.data?.error?.message || '请求失败'
+    if (error.response?.status === 401) {
+      localStorage.removeItem('fntv_admin_token')
+      if (window.location.pathname !== '/login') {
+        const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`
+        window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`)
+      }
+      return Promise.reject(new Error('登录已过期，请重新登录'))
+    }
     if (error.response?.status !== 401) {
       ElMessage.error(message)
     }
@@ -49,4 +57,3 @@ export async function putApi<T>(url: string, data?: unknown): Promise<T> {
   }
   return response.data.data
 }
-

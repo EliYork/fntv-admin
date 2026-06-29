@@ -5,7 +5,10 @@
         <h1 class="page-title">日志中心</h1>
         <p class="page-subtitle">日志读取范围限定在 /data/logs</p>
       </div>
-      <el-button :icon="Delete">清理旧日志</el-button>
+      <div class="header-actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
+        <el-button :icon="Delete">清理旧日志</el-button>
+      </div>
     </div>
     <div class="toolbar">
       <el-select v-model="level" placeholder="日志等级" style="width: 160px" @change="applyFilters">
@@ -37,11 +40,12 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Delete } from '@element-plus/icons-vue'
+import { Delete, Refresh } from '@element-plus/icons-vue'
 import { fetchLogs, type LogItem } from '../api/modules'
 import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
+import { useRouteRefresh } from '../utils/routeRefresh'
 
 const level = ref('')
 const page = ref(1)
@@ -77,4 +81,13 @@ async function handlePageSizeChange(value: number) {
 }
 
 onMounted(loadData)
+useRouteRefresh(loadData)
 </script>
+
+<style scoped>
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style>

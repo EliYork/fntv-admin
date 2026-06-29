@@ -5,7 +5,10 @@
         <h1 class="page-title">任务中心</h1>
         <p class="page-subtitle">任务记录将写入 admin.db，不触碰飞牛数据库</p>
       </div>
-      <el-button :icon="Refresh" @click="runHealthCheck">健康检查</el-button>
+      <div class="header-actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
+        <el-button @click="runHealthCheck">健康检查</el-button>
+      </div>
     </div>
     <div class="table-panel">
       <div class="panel-title">任务列表</div>
@@ -37,6 +40,7 @@ import { fetchTasks, type TaskItem } from '../api/modules'
 import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
+import { useRouteRefresh } from '../utils/routeRefresh'
 
 const page = ref(1)
 const pageSize = ref(20)
@@ -70,4 +74,13 @@ function runHealthCheck() {
 }
 
 onMounted(loadData)
+useRouteRefresh(loadData)
 </script>
+
+<style scoped>
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style>

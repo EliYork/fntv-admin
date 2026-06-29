@@ -5,7 +5,10 @@
         <h1 class="page-title">观看历史</h1>
         <p class="page-subtitle">分页查看播放记录，筛选能力已预留</p>
       </div>
-      <el-button :icon="Download" :loading="exporting" @click="exportCsv">导出 CSV</el-button>
+      <div class="header-actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
+        <el-button :icon="Download" :loading="exporting" @click="exportCsv">导出 CSV</el-button>
+      </div>
     </div>
     <div class="toolbar">
       <el-input v-model="keyword" placeholder="搜索标题或用户" style="width: 260px" clearable @clear="applyFilters" @keyup.enter="applyFilters" />
@@ -37,11 +40,12 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { Download, Search } from '@element-plus/icons-vue'
+import { Download, Refresh, Search } from '@element-plus/icons-vue'
 import { downloadHistoryCsv, fetchHistory, type HistoryItem } from '../api/modules'
 import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
+import { useRouteRefresh } from '../utils/routeRefresh'
 
 const keyword = ref('')
 const page = ref(1)
@@ -93,4 +97,13 @@ async function exportCsv() {
 }
 
 onMounted(loadData)
+useRouteRefresh(loadData)
 </script>
+
+<style scoped>
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style>
