@@ -10,3 +10,5 @@
 - 默认 Docker Compose 部署改为拉取 GHCR 成品镜像，保留开发者本地构建 compose。
 - 增加 Docker Hub 备用镜像发布和 `docker-compose.dockerhub.yml` 部署文件，GHCR 仍为默认镜像源。
 - V1 禁用飞牛数据库 snapshot 快照机制，业务接口统一通过 SQLite 只读源库直连读取 `/fntv/trimmedia.db`。
+- 增加 Phase 7A 报表中心基础统计，包含总览、播放趋势、活跃用户榜、热门媒体榜、媒体类型分布和分辨率分布。
+- 报表接口在后端 SQL 层聚合飞牛影视只读源库数据，不写入飞牛数据库，不恢复 snapshot。

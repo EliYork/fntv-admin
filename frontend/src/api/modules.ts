@@ -62,6 +62,56 @@ export interface MediaItem {
   note?: string | null
 }
 
+export interface ReportOverview {
+  total_users: number
+  total_media: number
+  total_play_records: number
+  watched_records: number
+  active_users_7d: number
+  active_users_30d: number
+  plays_7d: number
+  plays_30d: number
+  total_watch_seconds: number
+  avg_progress_percent?: number | null
+  generated_at: string
+}
+
+export interface PlayTrendItem {
+  date: string
+  play_count: number
+  watched_count: number
+  active_user_count: number
+}
+
+export interface TopUserReportItem {
+  user_guid: string
+  username: string
+  play_count: number
+  watched_count: number
+  watch_seconds: number
+  last_played_at?: string | null
+}
+
+export interface TopMediaReportItem {
+  item_guid: string
+  title: string
+  type: string
+  play_count: number
+  watched_count: number
+  last_played_at?: string | null
+  parent_title?: string | null
+}
+
+export interface MediaTypeDistributionItem {
+  type: string
+  count: number
+}
+
+export interface ResolutionDistributionItem {
+  resolution: string
+  play_count: number
+}
+
 export function fetchDashboardOverview() {
   return getApi<DashboardOverview>('/dashboard/overview')
 }
@@ -101,6 +151,30 @@ export function updateMediaProfile(guid: string, data: { display_title?: string;
 
 export function hideMedia(guid: string, hidden: boolean) {
   return postApi(`/media/${encodeURIComponent(guid)}/${hidden ? 'hide' : 'unhide'}`)
+}
+
+export function fetchReportOverview() {
+  return getApi<ReportOverview>('/reports/overview')
+}
+
+export function fetchReportPlayTrend(days = 30) {
+  return getApi<PlayTrendItem[]>('/reports/play-trend', { days })
+}
+
+export function fetchReportTopUsers(params: { days: string; limit: number }) {
+  return getApi<TopUserReportItem[]>('/reports/top-users', params)
+}
+
+export function fetchReportTopMedia(params: { days: string; limit: number }) {
+  return getApi<TopMediaReportItem[]>('/reports/top-media', params)
+}
+
+export function fetchReportMediaTypeDistribution() {
+  return getApi<MediaTypeDistributionItem[]>('/reports/media-type-distribution')
+}
+
+export function fetchReportResolutionDistribution(days: string) {
+  return getApi<ResolutionDistributionItem[]>('/reports/resolution-distribution', { days })
 }
 
 export interface LogItem {

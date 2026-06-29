@@ -310,6 +310,8 @@ cache_entries
 报表 API
 ```
 
+Phase 7A 先不启用报表缓存和任务化预计算。当前报表中心直接通过 SQLite 只读连接对飞牛源库做 SQL 聚合，返回基础统计结果；后续进入任务中心与缓存阶段时，再把可缓存报表写入 `admin.db` 或 `/data/cache`。
+
 ---
 
 ## 9. 项目目录结构
@@ -665,17 +667,15 @@ POST /api/media/:guid/unhide
 ### 13.8 Reports API
 
 ```text
-GET /api/reports/daily-play-trend
-GET /api/reports/weekly-play-trend
-GET /api/reports/monthly-play-trend
-GET /api/reports/user-ranking
-GET /api/reports/media-ranking
-GET /api/reports/completion-ranking
-GET /api/reports/dropoff-ranking
-GET /api/reports/resolution-stats
-GET /api/reports/media-type-stats
-GET /api/reports/hourly-heatmap
+GET /api/reports/overview
+GET /api/reports/play-trend?days=30
+GET /api/reports/top-users?days=30&limit=10
+GET /api/reports/top-media?days=30&limit=10
+GET /api/reports/media-type-distribution
+GET /api/reports/resolution-distribution?days=30
 ```
+
+Phase 7A 的报表 API 均需要登录鉴权，只读读取飞牛源库，不写飞牛数据库。播放趋势、活跃用户、热门媒体和分辨率分布在后端 SQL 层按时间范围聚合；`days` 支持 7、30、90，榜单和分辨率分布支持 `all`，服务层会限制最大天数和最大 `limit`。更复杂的完播率排行、弃剧排行、观看时段热力图和缓存预计算留到后续阶段。
 
 ---
 
@@ -890,16 +890,22 @@ PUT /api/settings/theme
 
 报表：
 
-1. 每日播放趋势。
-2. 每周播放趋势。
-3. 每月播放趋势。
-4. 用户观看排行。
-5. 媒体热度排行。
-6. 完播率排行。
-7. 弃剧排行。
-8. 分辨率统计。
-9. 媒体类型统计。
-10. 观看时段热力图。
+Phase 7A 基础可用版：
+
+1. 报表总览。
+2. 播放趋势。
+3. 活跃用户榜。
+4. 热门媒体榜。
+5. 媒体类型分布。
+6. 分辨率分布。
+
+后续版本再扩展：
+
+1. 每周、每月趋势。
+2. 完播率排行。
+3. 弃剧排行。
+4. 观看时段热力图。
+5. 报表缓存与后台任务预计算。
 
 ---
 
@@ -1423,17 +1429,16 @@ Docker 任务：
 
 完成核心统计分析能力。
 
+Phase 7A 先完成基础可用版，不进入任务中心、通知系统、多角色权限或自动调度。
+
 功能：
 
-1. 每日播放趋势。
-2. 每周播放趋势。
-3. 每月播放趋势。
-4. 用户排行。
-5. 媒体排行。
-6. 完播率排行。
-7. 分辨率统计。
-8. 媒体类型统计。
-9. 观看时段热力图。
+1. 报表总览。
+2. 播放趋势。
+3. 活跃用户榜。
+4. 热门媒体榜。
+5. 媒体类型分布。
+6. 分辨率分布。
 
 验收标准：
 
@@ -1441,7 +1446,8 @@ Docker 任务：
 2. 图表展示清晰。
 3. 支持时间范围筛选。
 4. 查询较慢时有加载状态。
-5. 可使用缓存减少重复计算。
+5. 后端 SQL 聚合，不把全量媒体或播放记录交给前端统计。
+6. 飞牛数据库只读读取，不写入、不生成 snapshot。
 
 ---
 

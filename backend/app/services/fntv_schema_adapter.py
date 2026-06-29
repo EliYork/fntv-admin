@@ -79,8 +79,8 @@ class FntvSchemaInfo:
     capabilities: dict[str, bool]
 
 
-def detect_schema() -> FntvSchemaInfo:
-    tables = inspect_schema()
+def detect_schema(conn: sqlite3.Connection | None = None) -> FntvSchemaInfo:
+    tables = inspect_schema(conn=conn)
     user_table = _choose_table(tables, USER_TABLES, ("user", "account", "member"))
     item_table = _choose_table(tables, ITEM_TABLES, ("item", "media", "video", "movie", "episode"))
     play_table = _choose_table(tables, PLAY_TABLES, ("item_user_play", "play", "history", "watch", "progress"))
