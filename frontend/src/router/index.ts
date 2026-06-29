@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { resolveAuthNavigation } from './authGuard'
 
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { public: true } },
@@ -28,23 +29,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
-  if (to.name === 'login') {
-    await auth.ensureReady()
-    if (auth.isAuthenticated) return { path: '/dashboard' }
-    return true
-  }
-  if (to.meta.public) return true
-  const allowed = await auth.ensureReady()
-  if (!allowed) {
-    return {
-      path: '/login',
-      query: {
-        redirect: to.fullPath,
-        forbidden: auth.accessDeniedMessage ? '1' : undefined
-      }
-    }
-  }
-  return true
+  return resolveAuthNavigation(to, auth)
 })
 
 export default router

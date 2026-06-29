@@ -44,6 +44,7 @@
           </el-radio-group>
         </div>
         <div class="settings-note">
+          <div>{{ accessControlSummary }}</div>
           <div>当前请求：{{ authPolicy?.is_local_request ? '本地访问' : '外部访问或未知' }}</div>
           <div>代理头：{{ authPolicy?.trust_proxy_headers ? '已信任 X-Forwarded-For / X-Real-IP' : '未信任代理头' }}</div>
         </div>
@@ -85,6 +86,19 @@ const currentThemeLabel = computed(() => {
     return theme.resolved === 'dark' ? '跟随系统（深色）' : '跟随系统（浅色）'
   }
   return theme.mode === 'dark' ? '深色' : '浅色'
+})
+
+const accessControlSummary = computed(() => {
+  if (localAuthRequired.value && remoteAccessPolicy.value === 'login') {
+    return '当前本地和外部访问均需要登录。'
+  }
+  if (!localAuthRequired.value && remoteAccessPolicy.value === 'login') {
+    return '当前本地访问免登录，外部访问需要登录。'
+  }
+  if (localAuthRequired.value && remoteAccessPolicy.value === 'deny') {
+    return '当前本地访问需要登录，外部访问禁止访问。'
+  }
+  return '当前本地访问免登录，外部访问禁止访问。'
 })
 
 async function refreshSettings() {

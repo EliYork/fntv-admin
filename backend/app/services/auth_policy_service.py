@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,7 @@ LOCAL_NETWORKS = tuple(
 )
 
 REMOTE_ACCESS_POLICIES = {"login", "deny"}
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,7 @@ def client_ip_from_request(request: Request | Any) -> str | None:
 def enforce_remote_access(policy: AuthPolicy, request: Request | Any) -> tuple[bool, str | None]:
     is_local, client_ip = request_is_local(request)
     if not is_local and policy.remote_access_policy == "deny":
+        logger.info("auth rejected: path=%s status=403 code=REMOTE_ACCESS_DENIED client=%s", _request_path(request), client_ip)
         raise AppError("REMOTE_ACCESS_DENIED", "外部访问已被禁止", 403)
     return is_local, client_ip
 
@@ -197,3 +200,8 @@ def _header(request: Request | Any, name: str) -> str | None:
     if value is None:
         value = headers.get(name.title())
     return str(value) if value is not None else None
+
+
+def _request_path(request: Request | Any) -> str:
+    url = getattr(request, "url", None)
+    return str(getattr(url, "path", "-"))

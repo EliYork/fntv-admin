@@ -14,3 +14,4 @@
 - 报表接口在后端 SQL 层聚合飞牛影视只读源库数据，不写入飞牛数据库，不恢复 snapshot。
 - 调整飞牛默认 Compose 数据库挂载为 `/usr/local/apps/@appdata/trim.media/database:/fntv`，记录 WAL/SHM 场景下 Docker 层 `:ro` 可能导致 `unable to open database file`；应用代码层仍使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON` 保证只读。
 - 增加本地/外部访问认证策略设置：默认本地和外部都需要登录，可在系统设置中开启本地免登录，外部访问可保持登录保护或禁止访问；代理头默认不信任。
+- 修复已登录后页面切换时普通业务接口 401 误清 Token 并跳回登录页的问题，登录态失效前会先复核 `/api/auth/me`。

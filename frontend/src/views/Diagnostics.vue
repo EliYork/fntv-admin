@@ -23,6 +23,21 @@
       <EmptyState v-else description="正在等待数据库状态" />
     </div>
 
+    <div class="table-panel section">
+      <div class="panel-title">登录态诊断</div>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="认证已初始化">{{ auth.checked ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="浏览器保存 Token">{{ auth.hasToken ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="当前用户">{{ auth.user?.username ?? '未加载' }}</el-descriptions-item>
+        <el-descriptions-item label="认证模式">{{ auth.user?.auth_mode ?? '-' }}</el-descriptions-item>
+        <el-descriptions-item label="本地请求">{{ auth.user?.is_local_request === undefined ? '-' : auth.user.is_local_request ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="本地访问策略">{{ auth.user?.local_auth_required === undefined ? '-' : auth.user.local_auth_required ? '需要登录' : '免登录' }}</el-descriptions-item>
+        <el-descriptions-item label="外部访问策略">{{ auth.user?.remote_access_policy === 'deny' ? '禁止访问' : auth.user?.remote_access_policy === 'login' ? '需要登录' : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="最近认证错误接口">{{ auth.lastAuthErrorEndpoint || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="最近认证错误状态">{{ auth.lastAuthErrorStatus ?? '-' }}</el-descriptions-item>
+      </el-descriptions>
+    </div>
+
     <div v-if="status" class="table-panel section">
       <div class="panel-title">快照</div>
       <el-descriptions :column="1" border>
@@ -161,12 +176,14 @@ import { ElMessage } from 'element-plus'
 import { fetchDatabaseStatusDetail, type DatabaseStatus } from '../api/system'
 import EmptyState from '../components/EmptyState.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
+import { useAuthStore } from '../stores/auth'
 
 const status = ref<DatabaseStatus | null>(null)
 const loading = ref(false)
 const copyDialogVisible = ref(false)
 const copyText = ref('')
 const copyTextareaRef = ref<InstanceType<typeof import('element-plus')['ElInput']> | null>(null)
+const auth = useAuthStore()
 
 const capabilityLabels: Record<string, string> = {
   can_read_users: '读取用户列表',
