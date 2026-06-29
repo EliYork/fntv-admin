@@ -11,22 +11,28 @@
       <el-input v-model="keyword" placeholder="搜索媒体标题" style="width: 280px" clearable @clear="applyFilters" @keyup.enter="applyFilters" />
       <el-select v-model="mediaType" placeholder="媒体类型" clearable style="width: 180px" @change="applyFilters" @clear="applyFilters">
         <el-option label="全部" value="" />
-        <el-option label="Movie" value="Movie" />
-        <el-option label="Series" value="Series" />
-        <el-option label="Season" value="Season" />
-        <el-option label="Episode" value="Episode" />
+        <el-option label="电影" value="Movie" />
+        <el-option label="剧集" value="Series" />
+        <el-option label="季" value="Season" />
+        <el-option label="单集" value="Episode" />
       </el-select>
       <el-button :icon="Search" type="primary" :loading="loading" @click="applyFilters">筛选</el-button>
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
     <div class="table-panel">
       <el-table v-if="pageData?.items.length" v-loading="loading" :data="pageData.items">
-        <el-table-column prop="title" label="标题" min-width="220" />
-        <el-table-column prop="media_type" label="类型" width="110" />
+        <el-table-column label="标题" min-width="260">
+          <template #default="{ row }">
+            <span>{{ row.title || '-' }}</span>
+            <div v-if="row.title === row.guid" class="muted-guid">{{ row.guid }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="类型" width="110">
+          <template #default="{ row }">{{ mediaTypeLabel(row.media_type) }}</template>
+        </el-table-column>
         <el-table-column prop="runtime" label="时长" width="110" />
         <el-table-column prop="parent" label="父级" min-width="160" />
         <el-table-column prop="play_count" label="播放次数" width="110" />
-        <el-table-column prop="note" label="备注" min-width="180" />
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
             <el-button size="small" text @click="toggleHidden(row.guid, !row.hidden)">
@@ -98,6 +104,20 @@ async function toggleHidden(guid: string, hidden: boolean) {
   ElMessage.success(hidden ? '已隐藏媒体' : '已恢复媒体')
   page.value = 1
   await loadData()
+}
+
+function mediaTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    Movie: '电影',
+    Series: '剧集',
+    TV: '剧集',
+    Season: '季',
+    Episode: '单集',
+    Video: '视频',
+    Directory: '目录',
+    MediaDB: '媒体库'
+  }
+  return labels[type] || type || '未知'
 }
 
 onMounted(loadData)

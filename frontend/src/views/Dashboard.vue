@@ -19,10 +19,10 @@
 
     <div class="table-panel">
       <div class="panel-title panel-title-row">
-        <span>最近 10 条活动</span>
+        <span>最近 20 条活动</span>
         <el-button size="small" text :icon="ArrowRight" @click="router.push('/history')">查看更多</el-button>
       </div>
-      <el-table v-if="activities.length" v-loading="loading" :data="activities" height="360">
+      <el-table v-if="activities.length" v-loading="loading" :data="activities">
         <el-table-column label="用户" min-width="160">
           <template #default="{ row }">
             <span>{{ row.username || row.user || '-' }}</span>
@@ -67,7 +67,7 @@ async function loadData() {
   loading.value = true
   try {
     overview.value = await fetchDashboardOverview()
-    activities.value = await fetchRecentActivities(10)
+    activities.value = await fetchRecentActivities(20)
   } finally {
     loading.value = false
   }

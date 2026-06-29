@@ -10,7 +10,7 @@
       </el-menu>
     </el-aside>
 
-    <el-container>
+    <el-container class="admin-content">
       <el-header class="topbar">
         <div class="status-row">
           <el-tag :type="databaseStatusType" effect="light">
@@ -39,7 +39,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { DataAnalysis, Document, Files, Film, HomeFilled, Monitor, Setting, SwitchButton, User, Tickets } from '@element-plus/icons-vue'
+import { DataAnalysis, Document, Film, HomeFilled, Monitor, Setting, SwitchButton, User } from '@element-plus/icons-vue'
 import { fetchDatabaseStatus } from '../api/system'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -65,8 +65,6 @@ const navItems = [
   { path: '/users', label: '用户管理', icon: User },
   { path: '/media', label: '媒体库', icon: Film },
   { path: '/reports', label: '报表中心', icon: DataAnalysis },
-  { path: '/tasks', label: '任务中心', icon: Tickets },
-  { path: '/logs', label: '日志中心', icon: Files },
   { path: '/settings', label: '系统设置', icon: Setting },
   { path: '/diagnostics', label: '系统诊断', icon: Monitor }
 ]
@@ -113,12 +111,20 @@ onMounted(refreshDatabaseStatus)
 
 <style scoped>
 .admin-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .admin-aside {
+  height: 100vh;
+  flex-shrink: 0;
   border-right: 1px solid var(--app-border);
   background: var(--app-sidebar-bg);
+}
+
+.admin-content {
+  height: 100vh;
+  min-width: 0;
 }
 
 .brand {
@@ -138,6 +144,7 @@ onMounted(refreshDatabaseStatus)
 
 .topbar {
   height: 58px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-surface);
   display: flex;
@@ -160,6 +167,8 @@ onMounted(refreshDatabaseStatus)
 }
 
 .main-view {
+  height: calc(100vh - 58px);
+  overflow-y: auto;
   padding: 22px;
   background: var(--app-bg);
 }
@@ -188,11 +197,24 @@ onMounted(refreshDatabaseStatus)
 @media (max-width: 760px) {
   .admin-shell {
     display: block;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .admin-aside {
     width: 100% !important;
+    height: auto;
     min-height: auto;
+  }
+
+  .admin-content,
+  .main-view {
+    height: auto;
+  }
+
+  .main-view {
+    overflow: visible;
   }
 
   .topbar {

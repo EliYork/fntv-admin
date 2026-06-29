@@ -19,9 +19,21 @@ def list_users(
     page_size: int = Query(default=20, ge=1),
     keyword: str | None = None,
     show_hidden: bool = False,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
     db: Session = Depends(get_session),
 ):
-    return ok(fntv_adapter.users_page(page, page_size, db=db, keyword=keyword, show_hidden=show_hidden))
+    return ok(
+        fntv_adapter.users_page(
+            page,
+            page_size,
+            db=db,
+            keyword=keyword,
+            show_hidden=show_hidden,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+    )
 
 
 @router.get("/{guid}")

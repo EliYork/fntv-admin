@@ -116,7 +116,7 @@ export function fetchDashboardOverview() {
   return getApi<DashboardOverview>('/dashboard/overview')
 }
 
-export function fetchRecentActivities(limit = 10) {
+export function fetchRecentActivities(limit = 20) {
   return getApi<HistoryItem[]>('/dashboard/recent-activities', { limit })
 }
 
@@ -157,7 +157,7 @@ export function fetchReportOverview() {
   return getApi<ReportOverview>('/reports/overview')
 }
 
-export function fetchReportPlayTrend(days = 30) {
+export function fetchReportPlayTrend(days: number | string = 30) {
   return getApi<PlayTrendItem[]>('/reports/play-trend', { days })
 }
 
@@ -165,7 +165,7 @@ export function fetchReportTopUsers(params: { days: string; limit: number }) {
   return getApi<TopUserReportItem[]>('/reports/top-users', params)
 }
 
-export function fetchReportTopMedia(params: { days: string; limit: number }) {
+export function fetchReportTopMedia(params: { days: string; limit: number; mode?: 'episode' | 'series' }) {
   return getApi<TopMediaReportItem[]>('/reports/top-media', params)
 }
 

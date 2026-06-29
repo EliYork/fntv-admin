@@ -51,6 +51,7 @@ ITEM_FIELD_PRIORITIES = {
 HASH_LIKE_RE = re.compile(r"^[0-9a-f]{24,64}$", re.IGNORECASE)
 UUID_LIKE_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 LONG_NUMERIC_ID_RE = re.compile(r"^\d{12,}$")
+EPISODE_MARKER_RE = re.compile(r"\bS\d{1,2}E\d{1,3}\b", re.IGNORECASE)
 
 PLAY_FIELD_PRIORITIES = {
     "id": ("id", "guid", "uuid"),
@@ -295,18 +296,32 @@ def history_csv(filters: dict[str, Any] | None = None) -> str:
     return output.getvalue()
 
 
-def users_page(page: int, page_size: int, db: Session | None = None, keyword: str | None = None, show_hidden: bool = False) -> dict[str, Any]:
+def users_page(
+    page: int,
+    page_size: int,
+    db: Session | None = None,
+    keyword: str | None = None,
+    show_hidden: bool = False,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, Any]:
     try:
-        schema = detect_schema()
+        schema = detect_schema(conn=conn) if conn is not None else detect_schema()
         if not schema.users.table:
             return _empty_page(page, page_size, capabilities=schema.capabilities)
         page_num, clean_page_size, _ = normalize_page(page, page_size)
         profiles = _user_profiles(db)
         hidden_guids = set() if show_hidden else {guid for guid, profile in profiles.items() if profile.hidden}
-        with open_fntv_connection() as conn:
-            rows, total = _entity_rows(conn, schema.users, schema, keyword, page_num, clean_page_size, "user", exclude_guids=hidden_guids)
-            stats = _user_stats_for(conn, schema, [_row_value(row, schema.users.fields.get("guid")) for row in rows])
+        if conn is not None:
+            rows, total = _user_rows(conn, schema, keyword, page_num, clean_page_size, hidden_guids, sort_by, sort_order)
+            stats = _user_stats_from_rows(rows)
             items = [_user_row(row, schema, profiles, stats) for row in rows]
+        else:
+            with open_fntv_connection() as active_conn:
+                rows, total = _user_rows(active_conn, schema, keyword, page_num, clean_page_size, hidden_guids, sort_by, sort_order)
+                stats = _user_stats_from_rows(rows)
+                items = [_user_row(row, schema, profiles, stats) for row in rows]
         pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
         return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capabilities": schema.capabilities}
     except AppError as exc:
@@ -737,6 +752,112 @@ def _entity_rows(
     return [dict(row) for row in rows], int(count["total"]) if count else 0
 
 
+def _user_rows(
+    conn: sqlite3.Connection,
+    schema: FntvSchemaInfo,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+    exclude_guids: set[str] | None,
+    sort_by: str | None,
+    sort_order: str | None,
+) -> tuple[list[dict[str, Any]], int]:
+    fmap = schema.users
+    if not fmap.table:
+        return [], 0
+    _, clean_page_size, offset = normalize_page(page, page_size)
+    where: list[str] = []
+    params: list[Any] = []
+    display_cols = get_user_display_columns(schema)
+    if keyword:
+        cols = [col for col in (display_cols or [fmap.fields.get("guid")]) if col]
+        if cols:
+            where.append("(" + " OR ".join(f"u.{quote_identifier(col)} LIKE ?" for col in cols) + ")")
+            params.extend([f"%{keyword}%"] * len(cols))
+    guid_col = fmap.fields.get("guid")
+    if exclude_guids and guid_col:
+        keys = sorted(str(guid) for guid in exclude_guids if guid)
+        if keys:
+            placeholders = ",".join("?" for _ in keys)
+            where.append(f"u.{quote_identifier(guid_col)} NOT IN ({placeholders})")
+            params.extend(keys)
+    where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+    count = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(fmap.table)} u{where_sql}", params).fetchone()
+    stats_join = _user_stats_join_sql(schema)
+    order_sql = _user_order_sql(schema, sort_by, sort_order)
+    rows = conn.execute(
+        f"SELECT u.*, u.rowid AS __rowid, stats.__play_count, stats.__watch_seconds, stats.__recent_play "
+        f"FROM {quote_identifier(fmap.table)} u {stats_join}{where_sql}{order_sql} LIMIT ? OFFSET ?",
+        (*params, clean_page_size, offset),
+    ).fetchall()
+    return [dict(row) for row in rows], int(count["total"]) if count else 0
+
+
+def _user_stats_join_sql(schema: FntvSchemaInfo) -> str:
+    table = schema.plays.table
+    play_user_col = schema.plays.fields.get("user_guid")
+    user_guid_col = schema.users.fields.get("guid")
+    if not table or not play_user_col or not user_guid_col:
+        return "LEFT JOIN (SELECT NULL AS __stat_guid, 0 AS __play_count, 0 AS __watch_seconds, NULL AS __recent_play WHERE 0) stats ON 1 = 0"
+    time_expr = _play_time_expr(schema, "p")
+    recent_expr = f"MAX({time_expr})" if time_expr else "NULL"
+    position_expr = _play_duration_seconds_sql(schema.plays.fields.get("position"), "p")
+    where = _visible_clause(schema, "p")
+    where_sql = f" WHERE {where}" if where else ""
+    return (
+        "LEFT JOIN ("
+        f"SELECT p.{quote_identifier(play_user_col)} AS __stat_guid, "
+        "COUNT(*) AS __play_count, "
+        f"SUM({position_expr}) AS __watch_seconds, "
+        f"{recent_expr} AS __recent_play "
+        f"FROM {quote_identifier(table)} p{where_sql} "
+        f"GROUP BY p.{quote_identifier(play_user_col)}"
+        f") stats ON u.{quote_identifier(user_guid_col)} = stats.__stat_guid"
+    )
+
+
+def _play_duration_seconds_sql(column: str | None, alias: str) -> str:
+    if not column:
+        return "0"
+    expr = f"{alias}.{quote_identifier(column)}"
+    return f"(CASE WHEN {expr} IS NULL OR {expr} = '' THEN 0 WHEN CAST({expr} AS REAL) > 1000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
+
+
+def _user_order_sql(schema: FntvSchemaInfo, sort_by: str | None, sort_order: str | None) -> str:
+    username_col = (get_user_display_columns(schema) or [schema.users.fields.get("guid")])[0]
+    last_login_col = schema.users.fields.get("last_login_at")
+    allowed: dict[str, str | None] = {
+        "username": f"u.{quote_identifier(username_col)}" if username_col else None,
+        "play_count": "COALESCE(stats.__play_count, 0)",
+        "watch_duration": "COALESCE(stats.__watch_seconds, 0)",
+        "watch_seconds": "COALESCE(stats.__watch_seconds, 0)",
+        "last_play_at": "stats.__recent_play",
+        "last_login_at": f"u.{quote_identifier(last_login_col)}" if last_login_col else None,
+    }
+    key = sort_by if sort_by in allowed and allowed[sort_by] else "username"
+    direction = "DESC" if key == sort_by and str(sort_order or "").lower() == "desc" else "ASC"
+    expression = allowed[key] or allowed["username"]
+    tie_breaker = allowed["username"] or "u.rowid"
+    return f" ORDER BY {expression} {direction}, {tie_breaker} ASC"
+
+
+def _user_stats_from_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        guid = str(row.get("guid") or row.get("user_guid") or row.get("id") or "")
+        if not guid:
+            continue
+        watch_seconds = normalize_duration_seconds(row.get("__watch_seconds")) or 0
+        result[guid] = {
+            "guid": guid,
+            "play_count": int(row.get("__play_count") or 0),
+            "watch_seconds": watch_seconds,
+            "watch_duration": format_duration(watch_seconds),
+            "recent_play_at": normalize_timestamp(row.get("__recent_play")),
+        }
+    return result
+
+
 def _user_row(row: dict[str, Any], schema: FntvSchemaInfo, profiles: dict[str, UserProfile], stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
     guid = str(_row_value(row, schema.users.fields.get("guid")) or "")
     profile = profiles.get(guid)
@@ -923,7 +1044,7 @@ def _hierarchy_title(conn: sqlite3.Connection, schema: FntvSchemaInfo, row: dict
     marker = _season_episode_marker(season, episode)
     if marker and marker not in parts:
         parts.insert(max(1, len(parts) - 1), marker)
-    return " - ".join(str(part) for part in parts if part) or title
+    return _join_media_title_parts(parts) or title
 
 
 def _season_episode_marker(season: Any, episode: Any) -> str | None:
@@ -936,6 +1057,25 @@ def _season_episode_marker(season: Any, episode: Any) -> str | None:
         return f"{season_text}E{int(float(episode)):02d}"
     except (TypeError, ValueError):
         return None
+
+
+def _join_media_title_parts(parts: list[Any]) -> str:
+    segments: list[str] = []
+    for part in parts:
+        for segment in str(part or "").split(" - "):
+            text = segment.strip()
+            if text:
+                segments.append(text)
+    result: list[str] = []
+    for index, segment in enumerate(segments):
+        upper = segment.upper()
+        next_upper = segments[index + 1].upper() if index + 1 < len(segments) else ""
+        if result and result[-1].upper() == upper:
+            continue
+        if re.fullmatch(r"S\d{1,2}", upper) and next_upper.startswith(f"{upper}E"):
+            continue
+        result.append(segment)
+    return " - ".join(result)
 
 
 def _user_profiles(db: Session | None) -> dict[str, UserProfile]:
@@ -1015,6 +1155,11 @@ def _is_generic_media_title(value: str, media_type: str) -> bool:
         return False
     text = value.strip().lower()
     if text.isdigit():
+        return True
+    markers = [marker.upper() for marker in EPISODE_MARKER_RE.findall(value)]
+    if media_type == "episode" and len(markers) >= 2 and len(set(markers)) == 1:
+        return True
+    if media_type == "episode" and re.fullmatch(r"s\d{1,2}e\d{1,3}", text):
         return True
     return bool(re.fullmatch(r"(season|s)\s*0*\d+", text))
 

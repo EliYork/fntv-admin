@@ -15,7 +15,7 @@ def overview():
 
 
 @router.get("/recent-activities")
-def recent_activities(limit: int = Query(default=10, ge=1, le=20)):
+def recent_activities(limit: int = Query(default=20, ge=1, le=30)):
     return ok(fntv_adapter.recent_activities(limit=limit))
 
 

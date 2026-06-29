@@ -14,8 +14,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'users', name: 'users', component: () => import('../views/Users.vue') },
       { path: 'media', name: 'media', component: () => import('../views/MediaLibrary.vue') },
       { path: 'reports', name: 'reports', component: () => import('../views/Reports.vue') },
-      { path: 'tasks', name: 'tasks', component: () => import('../views/Tasks.vue') },
-      { path: 'logs', name: 'logs', component: () => import('../views/Logs.vue') },
+      { path: 'tasks', redirect: '/dashboard' },
+      { path: 'logs', redirect: '/dashboard' },
       { path: 'settings', name: 'settings', component: () => import('../views/SystemSettings.vue') },
       { path: 'diagnostics', name: 'diagnostics', component: () => import('../views/Diagnostics.vue') }
     ]

@@ -50,7 +50,6 @@
         </div>
         <div class="settings-actions">
           <el-button type="primary" :loading="authPolicySaving" @click="saveAuthPolicy">保存访问控制</el-button>
-          <el-button :disabled="authPolicySaving" @click="applyNasPreset">本地免登录 + 外部需要登录</el-button>
         </div>
       </div>
     </div>
@@ -134,12 +133,6 @@ async function saveAuthPolicy() {
   } finally {
     authPolicySaving.value = false
   }
-}
-
-async function applyNasPreset() {
-  localAuthRequired.value = false
-  remoteAccessPolicy.value = 'login'
-  await saveAuthPolicy()
 }
 
 onMounted(refreshSettings)

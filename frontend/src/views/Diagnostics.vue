@@ -5,7 +5,10 @@
         <h1 class="page-title">系统诊断</h1>
         <p class="page-subtitle">查看数据库状态、schema 识别和只读直连诊断信息</p>
       </div>
-      <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新诊断</el-button>
+      <div class="header-actions">
+        <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新</el-button>
+        <el-button :icon="CopyDocument" :loading="copying" @click="copyDiagnostics">复制诊断信息</el-button>
+      </div>
     </div>
 
     <div class="table-panel section">
@@ -171,7 +174,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { CopyDocument, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchDatabaseStatusDetail, type DatabaseStatus } from '../api/system'
 import EmptyState from '../components/EmptyState.vue'
@@ -180,6 +183,7 @@ import { useAuthStore } from '../stores/auth'
 
 const status = ref<DatabaseStatus | null>(null)
 const loading = ref(false)
+const copying = ref(false)
 const copyDialogVisible = ref(false)
 const copyText = ref('')
 const copyTextareaRef = ref<InstanceType<typeof import('element-plus')['ElInput']> | null>(null)
@@ -272,19 +276,27 @@ function buildDiagnosticsJson(source: DatabaseStatus | null = status.value): str
 }
 
 async function copyDiagnostics() {
-  const text = buildDiagnosticsJson(status.value)
-  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    navigator.clipboard.writeText(text).then(() => {
-      ElMessage.success('已复制诊断信息')
-    }).catch(() => {
+  copying.value = true
+  try {
+    const source = status.value || await fetchDatabaseStatusDetail()
+    status.value = source
+    const text = buildDiagnosticsJson(source)
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(text)
+        ElMessage.success('已复制诊断信息')
+      } catch {
+        copyText.value = text
+        copyDialogVisible.value = true
+        ElMessage.warning('浏览器限制了自动复制，请按 Ctrl+C 手动复制')
+      }
+    } else {
       copyText.value = text
       copyDialogVisible.value = true
       ElMessage.warning('浏览器限制了自动复制，请按 Ctrl+C 手动复制')
-    })
-  } else {
-    copyText.value = text
-    copyDialogVisible.value = true
-    ElMessage.warning('浏览器限制了自动复制，请按 Ctrl+C 手动复制')
+    }
+  } finally {
+    copying.value = false
   }
 }
 
@@ -326,5 +338,10 @@ useRouteRefresh(loadStatus)
 }
 .column-tag {
   margin: 0;
+}
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

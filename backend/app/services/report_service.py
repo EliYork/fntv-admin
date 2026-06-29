@@ -12,7 +12,18 @@ from app.services import fntv_schema_adapter as adapter
 
 ALLOWED_DAYS = {7, 30, 90}
 MAX_DAYS = 180
+MAX_TREND_DAYS = 365
 MAX_LIMIT = 50
+MEDIA_TYPE_LABELS = {
+    "episode": "单集",
+    "season": "季",
+    "movie": "电影",
+    "tv": "剧集",
+    "series": "剧集",
+    "video": "视频",
+    "directory": "目录",
+    "mediadb": "媒体库",
+}
 
 
 @contextmanager
@@ -65,7 +76,7 @@ def overview(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
 
 
 def play_trend(days: int | str | None = 30, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
-    clean_days = normalize_days(days)
+    clean_days = MAX_TREND_DAYS if days == "all" else normalize_days(days)
     assert isinstance(clean_days, int)
     with _readonly_connection(conn) as active_conn:
         schema = adapter.detect_schema(conn=active_conn)
@@ -163,9 +174,10 @@ def top_users(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
         ]
 
 
-def top_media(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def top_media(days: int | str | None = 30, limit: int | None = 10, mode: str = "episode", conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
     clean_days = normalize_days(days, allow_all=True)
     clean_limit = normalize_limit(limit)
+    clean_mode = mode if mode in {"episode", "series"} else "episode"
     with _readonly_connection(conn) as active_conn:
         schema = adapter.detect_schema(conn=active_conn)
         table = schema.plays.table
@@ -177,18 +189,48 @@ def top_media(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
             return []
         seconds_expr = _timestamp_seconds_sql(time_expr) if time_expr else None
         watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
-        title_expr = _display_expr(schema, schema.items.table, "i", ("title", "original_title", "filename", "name", "guid"))
-        parent_title_expr = "''"
         type_col = schema.items.fields.get("media_type")
         parent_col = schema.items.fields.get("parent_guid")
+        title_expr = _display_expr(schema, schema.items.table, "i", ("title", "original_title", "filename", "name", "guid"))
         type_expr = f"i.{quote_identifier(type_col)}" if type_col else "''"
-        parent_join = ""
+        parent_title_expr = "''"
+        parent_join = _top_media_parent_join(item_table, item_guid_col, parent_col)
         if parent_col:
-            parent_join = (
-                f" LEFT JOIN {quote_identifier(item_table)} parent"
-                f" ON i.{quote_identifier(parent_col)} = parent.{quote_identifier(item_guid_col)}"
-            )
             parent_title_expr = _display_expr(schema, schema.items.table, "parent", ("title", "original_title", "filename", "name", "guid"), fallback="''")
+        group_guid_expr = f"p.{quote_identifier(play_item_col)}"
+        group_title_expr = title_expr
+        group_type_expr = type_expr
+        if clean_mode == "series" and parent_col:
+            parent_type_expr = f"parent.{quote_identifier(type_col)}" if type_col else "''"
+            grandparent_type_expr = f"grandparent.{quote_identifier(type_col)}" if type_col else "''"
+            parent_title_for_group = _display_expr(schema, schema.items.table, "parent", ("title", "original_title", "filename", "name", "guid"), fallback=title_expr)
+            grandparent_title_for_group = _display_expr(schema, schema.items.table, "grandparent", ("title", "original_title", "filename", "name", "guid"), fallback=parent_title_for_group)
+            parent_guid_expr = f"parent.{quote_identifier(item_guid_col)}"
+            grandparent_guid_expr = f"grandparent.{quote_identifier(item_guid_col)}"
+            type_lower = f"LOWER(COALESCE({type_expr}, ''))"
+            parent_type_lower = f"LOWER(COALESCE({parent_type_expr}, ''))"
+            group_guid_expr = (
+                f"CASE "
+                f"WHEN {type_lower} = 'episode' AND {grandparent_guid_expr} IS NOT NULL THEN {grandparent_guid_expr} "
+                f"WHEN {type_lower} = 'episode' AND {parent_guid_expr} IS NOT NULL THEN {parent_guid_expr} "
+                f"WHEN {type_lower} = 'season' AND {parent_guid_expr} IS NOT NULL THEN {parent_guid_expr} "
+                f"ELSE i.{quote_identifier(item_guid_col)} END"
+            )
+            group_title_expr = (
+                f"CASE "
+                f"WHEN {type_lower} = 'episode' AND {grandparent_guid_expr} IS NOT NULL THEN {grandparent_title_for_group} "
+                f"WHEN {type_lower} = 'episode' AND {parent_guid_expr} IS NOT NULL THEN {parent_title_for_group} "
+                f"WHEN {type_lower} = 'season' AND {parent_guid_expr} IS NOT NULL THEN {parent_title_for_group} "
+                f"ELSE {title_expr} END"
+            )
+            group_type_expr = (
+                f"CASE "
+                f"WHEN {type_lower} = 'episode' AND {grandparent_guid_expr} IS NOT NULL THEN {grandparent_type_expr} "
+                f"WHEN {type_lower} = 'episode' AND {parent_guid_expr} IS NOT NULL THEN "
+                f"CASE WHEN {parent_type_lower} = 'season' THEN 'TV' ELSE {parent_type_expr} END "
+                f"WHEN {type_lower} = 'season' AND {parent_guid_expr} IS NOT NULL THEN {parent_type_expr} "
+                f"ELSE {type_expr} END"
+            )
         joins, where = _play_scope(schema, include_user=True, include_item=True)
         if clean_days != "all" and seconds_expr:
             where.append(f"{seconds_expr} >= ?")
@@ -199,9 +241,9 @@ def top_media(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
         rows = active_conn.execute(
             f"""
             SELECT
-                p.{quote_identifier(play_item_col)} AS item_guid,
-                {title_expr} AS title,
-                {type_expr} AS media_type,
+                {group_guid_expr} AS item_guid,
+                {group_title_expr} AS title,
+                {group_type_expr} AS media_type,
                 {parent_title_expr} AS parent_title,
                 COUNT(*) AS play_count,
                 SUM({watched_expr}) AS watched_count,
@@ -210,7 +252,7 @@ def top_media(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
             {joins}
             {parent_join}
             WHERE {' AND '.join(where)}
-            GROUP BY p.{quote_identifier(play_item_col)}
+            GROUP BY 1, 2, 3, 4
             ORDER BY play_count DESC, last_played DESC
             LIMIT ?
             """,
@@ -220,7 +262,7 @@ def top_media(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
             {
                 "item_guid": str(row["item_guid"] or ""),
                 "title": str(row["title"] or row["item_guid"] or ""),
-                "type": str(row["media_type"] or ""),
+                "type": _top_media_type_label(row["media_type"], clean_mode),
                 "play_count": int(row["play_count"] or 0),
                 "watched_count": int(row["watched_count"] or 0),
                 "last_played_at": adapter.normalize_timestamp(row["last_played"]),
@@ -252,7 +294,7 @@ def media_type_distribution(conn: sqlite3.Connection | None = None) -> list[dict
             LIMIT 100
             """
         ).fetchall()
-        return [{"type": str(row["media_type"] or "未知"), "count": int(row["total"] or 0)} for row in rows]
+        return [{"type": media_type_label(row["media_type"]), "count": int(row["total"] or 0)} for row in rows]
 
 
 def resolution_distribution(days: int | str | None = 30, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
@@ -272,7 +314,7 @@ def resolution_distribution(days: int | str | None = 30, conn: sqlite3.Connectio
             params.append(_days_cutoff(clean_days))
         rows = active_conn.execute(
             f"""
-            SELECT COALESCE(NULLIF(TRIM(p.{quote_identifier(resolution_col)}), ''), '未知') AS resolution, COUNT(*) AS play_count
+            SELECT COALESCE(NULLIF(TRIM(p.{quote_identifier(resolution_col)}), ''), '未记录') AS resolution, COUNT(*) AS play_count
             FROM {quote_identifier(table)} p
             {joins}
             WHERE {' AND '.join(where)}
@@ -282,7 +324,34 @@ def resolution_distribution(days: int | str | None = 30, conn: sqlite3.Connectio
             """,
             params,
         ).fetchall()
-        return [{"resolution": str(row["resolution"] or "未知"), "play_count": int(row["play_count"] or 0)} for row in rows]
+        items = [{"resolution": str(row["resolution"] or "未记录"), "play_count": int(row["play_count"] or 0)} for row in rows]
+        return sorted(items, key=lambda item: (item["resolution"] == "未记录", -item["play_count"], item["resolution"]))
+
+
+def media_type_label(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw or raw == "未知":
+        return "未知"
+    return MEDIA_TYPE_LABELS.get(raw.lower(), raw)
+
+
+def _top_media_type_label(value: Any, mode: str) -> str:
+    raw = str(value or "").strip()
+    if mode == "series" and raw.lower() in {"series", "tv"}:
+        return "TV"
+    return raw
+
+
+def _top_media_parent_join(item_table: str, item_guid_col: str, parent_col: str | None) -> str:
+    if not parent_col:
+        return ""
+    quoted_table = quote_identifier(item_table)
+    quoted_parent = quote_identifier(parent_col)
+    quoted_guid = quote_identifier(item_guid_col)
+    return (
+        f" LEFT JOIN {quoted_table} parent ON i.{quoted_parent} = parent.{quoted_guid}"
+        f" LEFT JOIN {quoted_table} grandparent ON parent.{quoted_parent} = grandparent.{quoted_guid}"
+    )
 
 
 def _overview_play_stats(conn: sqlite3.Connection, schema: adapter.FntvSchemaInfo) -> dict[str, Any]:

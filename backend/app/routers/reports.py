@@ -15,7 +15,7 @@ def overview():
 
 
 @router.get("/play-trend")
-def play_trend(days: int = Query(default=30, ge=1)):
+def play_trend(days: str = Query(default="30")):
     return ok(report_service.play_trend(days=days))
 
 
@@ -25,8 +25,8 @@ def top_users(days: str = Query(default="30"), limit: int = Query(default=10, ge
 
 
 @router.get("/top-media")
-def top_media(days: str = Query(default="30"), limit: int = Query(default=10, ge=1)):
-    return ok(report_service.top_media(days=days, limit=limit))
+def top_media(days: str = Query(default="30"), limit: int = Query(default=10, ge=1), mode: str = Query(default="episode")):
+    return ok(report_service.top_media(days=days, limit=limit, mode=mode))
 
 
 @router.get("/media-type-distribution")

@@ -61,6 +61,19 @@ def test_today_plays_normalizes_millisecond_timestamps(conn: sqlite3.Connection)
     assert adapter._count_today_plays(conn, schema) == 1
 
 
+def test_recent_activities_supports_twenty_items(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute('INSERT INTO item (guid, title, type) VALUES (?, ?, ?)', ("m1", "电影一", "Movie"))
+    conn.executemany(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, visible) VALUES (?, ?, ?, ?, ?)',
+        [("u1", "m1", now - index, now - index, 1) for index in range(25)],
+    )
+    schema = adapter.detect_schema(conn=conn)
+    rows, _ = adapter._play_rows(conn, schema, 1, 20, {})
+    assert len(rows) == 20
+
+
 def test_media_title_fallback_skips_hash_title(conn: sqlite3.Connection) -> None:
     conn.executemany(
         'INSERT INTO item (guid, title, original_title, filename, type, parent_guid, season_number, episode_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -79,13 +92,67 @@ def test_media_title_fallback_skips_hash_title(conn: sqlite3.Connection) -> None
     assert item["title"] == "剧集甲 - S01E01 - 第一集.mkv"
 
 
+def test_media_title_deduplicates_repeated_parent_and_marker(conn: sqlite3.Connection) -> None:
+    conn.executemany(
+        'INSERT INTO item (guid, title, original_title, filename, type, parent_guid, season_number, episode_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+            ("series-2", "低智商犯罪", None, None, "Series", None, None, None),
+            ("season-2", "低智商犯罪 - S01", None, None, "Season", "series-2", 1, None),
+            ("episode-2", "低智商犯罪 - S01E01 - S01E01", None, "第一集.mkv", "Episode", "season-2", 1, 1),
+        ],
+    )
+    schema = adapter.detect_schema(conn=conn)
+    row = conn.execute('SELECT * FROM item WHERE guid = "episode-2"').fetchone()
+    assert row is not None
+    title = adapter._hierarchy_title(conn, schema, dict(row), max_depth=4)
+    assert title == "低智商犯罪 - S01E01 - 第一集.mkv"
+
+
+def test_users_can_sort_by_play_count_desc(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.executemany(
+        'INSERT INTO user (guid, username) VALUES (?, ?)',
+        [("u1", "alice"), ("u2", "bob")],
+    )
+    conn.executemany(
+        'INSERT INTO item (guid, title, type) VALUES (?, ?, ?)',
+        [("m1", "电影一", "Movie")],
+    )
+    conn.executemany(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, visible) VALUES (?, ?, ?, ?, ?)',
+        [
+            ("u1", "m1", now, now, 1),
+            ("u2", "m1", now, now, 1),
+            ("u2", "m1", now - 1, now - 1, 1),
+        ],
+    )
+    page = adapter.users_page(1, 20, keyword=None, show_hidden=False, sort_by="play_count", sort_order="desc", conn=conn)
+    assert [row["guid"] for row in page["items"]] == ["u2", "u1"]
+
+
+def test_users_sort_rejects_unlisted_field(conn: sqlite3.Connection) -> None:
+    conn.executemany(
+        'INSERT INTO user (guid, username) VALUES (?, ?)',
+        [("u1", "alice"), ("u2", "bob")],
+    )
+    page = adapter.users_page(1, 20, keyword=None, show_hidden=False, sort_by="username; DROP TABLE user", sort_order="desc", conn=conn)
+    assert [row["guid"] for row in page["items"]] == ["u1", "u2"]
+
+
 def main() -> None:
-    conn = _connect()
-    try:
-        test_today_plays_normalizes_millisecond_timestamps(conn)
-        test_media_title_fallback_skips_hash_title(conn)
-    finally:
-        conn.close()
+    for test in (
+        test_today_plays_normalizes_millisecond_timestamps,
+        test_recent_activities_supports_twenty_items,
+        test_media_title_fallback_skips_hash_title,
+        test_media_title_deduplicates_repeated_parent_and_marker,
+        test_users_can_sort_by_play_count_desc,
+        test_users_sort_rejects_unlisted_field,
+    ):
+        conn = _connect()
+        try:
+            test(conn)
+        finally:
+            conn.close()
     print("dashboard media smoke passed")
 
 

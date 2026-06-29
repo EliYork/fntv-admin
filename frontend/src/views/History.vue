@@ -20,7 +20,19 @@
         <el-table-column prop="username" label="用户" min-width="150" />
         <el-table-column prop="display_title" label="媒体标题" min-width="260" />
         <el-table-column prop="played_at" label="播放时间" min-width="160" />
-        <el-table-column prop="progress" label="进度" width="120" />
+        <el-table-column label="进度" min-width="260">
+          <template #default="{ row }">
+            <div class="history-progress">
+              <div class="progress-track" :class="{ 'is-unknown': progressPercent(row) === null }">
+                <div class="progress-fill" :style="{ width: `${progressPercent(row) ?? 0}%` }"></div>
+              </div>
+              <div class="progress-meta">
+                <span>{{ progressText(row) }}</span>
+                <el-tag v-if="progressWarning(row)" size="small" type="warning" effect="light">{{ progressWarning(row) }}</el-tag>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="watched_text" label="看完" width="90" />
         <el-table-column prop="resolution" label="分辨率" width="110" />
       </el-table>
@@ -96,6 +108,28 @@ async function exportCsv() {
   }
 }
 
+function progressPercent(row: HistoryItem): number | null {
+  if (row.watched) return 100
+  if (typeof row.progress_percent === 'number') return Math.max(0, Math.min(100, row.progress_percent))
+  if (row.position_seconds != null && row.runtime_seconds && row.runtime_seconds > 0) {
+    return Math.max(0, Math.min(100, (row.position_seconds / row.runtime_seconds) * 100))
+  }
+  return null
+}
+
+function progressText(row: HistoryItem): string {
+  if (row.watched && !row.progress) return '已看完'
+  return row.progress || '-'
+}
+
+function progressWarning(row: HistoryItem): string {
+  if (row.watched) return '已看完'
+  if (row.position_seconds != null && row.runtime_seconds && row.position_seconds > row.runtime_seconds) {
+    return '进度异常'
+  }
+  return ''
+}
+
 onMounted(loadData)
 useRouteRefresh(loadData)
 </script>
@@ -105,5 +139,39 @@ useRouteRefresh(loadData)
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.history-progress {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--app-bar-track);
+}
+
+.progress-track.is-unknown {
+  background: repeating-linear-gradient(90deg, var(--app-bar-track), var(--app-bar-track) 8px, var(--app-border) 8px, var(--app-border) 12px);
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--app-accent);
+}
+
+.progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--app-muted-strong);
+  font-size: 12px;
 }
 </style>
