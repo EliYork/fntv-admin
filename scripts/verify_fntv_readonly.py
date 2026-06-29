@@ -20,12 +20,12 @@ ALLOWED_FILES = {
 }
 
 
-def check_compose_ro() -> list[str]:
+def check_compose_fntv_mount() -> list[str]:
     compose = ROOT / "docker-compose.yml"
     text = compose.read_text(encoding="utf-8")
-    if ":/fntv:ro" in text or ":/fntv/trimmedia.db:ro" in text:
+    if ":/fntv" in text or ":/fntv/trimmedia.db" in text:
         return []
-    return ["docker-compose.yml is missing a read-only mount for /fntv or /fntv/trimmedia.db"]
+    return ["docker-compose.yml is missing a mount for /fntv or /fntv/trimmedia.db"]
 
 
 def scan_backend_sql() -> list[str]:
@@ -70,7 +70,7 @@ def main() -> int:
     parser.add_argument("--database", type=Path, help="Optional trimmedia.db path for a real read-only write probe")
     args = parser.parse_args()
 
-    errors = [*check_compose_ro(), *scan_backend_sql()]
+    errors = [*check_compose_fntv_mount(), *scan_backend_sql()]
     if args.database:
         errors.extend(probe_readonly_database(args.database))
 

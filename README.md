@@ -9,7 +9,7 @@
 - Docker Compose 是唯一官方部署入口。
 - 默认部署使用 GHCR 成品镜像。
 - Docker Hub 仅作为备用镜像源。
-- 飞牛影视数据库只读挂载到 `/fntv/trimmedia.db`。
+- 飞牛影视数据库目录挂载到 `/fntv`，应用代码层只读打开 `/fntv/trimmedia.db`。
 - 所有增强数据写入 `/data/admin.db`。
 - 所有可变数据都保存在 `/data`。
 - 不提供裸机、PM2、手动 Nginx、宝塔或 systemd 生产部署方式。
@@ -30,7 +30,7 @@ services:
       - "8080:8080"
     volumes:
       - /usr/local/apps/@appdata/fntv-admin/data:/data
-      - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
+      - /usr/local/apps/@appdata/trim.media/database:/fntv
     environment:
       APP_ENV: production
       APP_SECRET_KEY: change-me-please
@@ -52,11 +52,11 @@ image: docker.io/REPLACE_WITH_YOUR_DOCKERHUB_USERNAME/fntv-admin:latest
 3. 检查挂载路径：
 
 ```text
-飞牛影视数据库目录：/usr/local/apps/@appdata/trim.media/database -> /fntv 只读
+飞牛影视数据库目录：/usr/local/apps/@appdata/trim.media/database -> /fntv
 fntv-admin 数据目录：/usr/local/apps/@appdata/fntv-admin/data -> /data 读写
 ```
 
-`FNTV_DB_PATH` 保持 `/fntv/trimmedia.db`。不要把飞牛影视数据库目录挂到 `/data`，也不要读写挂载飞牛影视数据库目录。
+`FNTV_DB_PATH` 保持 `/fntv/trimmedia.db`。不要把飞牛影视数据库目录挂到 `/data`。
 
 4. 启动：
 
@@ -126,7 +126,7 @@ docker.io/<DockerHub用户名>/fntv-admin:latest
 容器内固定路径：
 
 ```text
-/fntv/trimmedia.db    飞牛影视数据库，只读，由 /fntv 目录挂载提供
+/fntv/trimmedia.db    飞牛影视数据库，由 /fntv 目录挂载提供，应用代码层只读打开
 /data/admin.db        fntv-admin 增强数据
 /data/logs            运行日志
 /data/cache           缓存
@@ -137,17 +137,19 @@ docker.io/<DockerHub用户名>/fntv-admin:latest
 
 ## 飞牛数据库只读保护
 
-`docker-compose.yml` 推荐包含：
+`docker-compose.yml` 默认包含：
 
 ```yaml
-- /usr/local/apps/@appdata/trim.media/database:/fntv:ro
+- /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
-`/data` 必须读写挂载，否则 `admin.db`、日志和缓存无法持久化。`/fntv` 必须只读挂载。后端通过 SQLite URI `mode=ro` 打开飞牛数据库，并在连接上设置 `PRAGMA query_only = ON`。业务代码不提供任何飞牛数据库写入接口。
+飞牛影视实机可能使用 SQLite WAL 模式。Docker 层给 `/fntv` 加 `:ro` 时，SQLite 可能因为无法访问或维护 `-wal`、`-shm`、锁相关文件而报 `unable to open database file`。因此飞牛默认 Compose 不再给 `/fntv` 写 `:ro`。
+
+`/data` 必须读写挂载，否则 `admin.db`、日志和缓存无法持久化。飞牛数据库的安全边界由应用代码层保证：后端通过 SQLite URI `mode=ro` 打开飞牛数据库，并在连接上设置 `PRAGMA query_only = ON`。业务代码不提供任何飞牛数据库写入接口，`python scripts/verify_fntv_readonly.py` 必须通过。
 
 ## 飞牛源库直读
 
-V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。后端使用 SQLite URI `mode=ro` 打开源库，并设置 `PRAGMA query_only = ON`。即使飞牛 Docker UI 中显示数据库目录为读写挂载，代码层仍会拒绝写入飞牛数据库。
+V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。后端使用 SQLite URI `mode=ro` 打开源库，并设置 `PRAGMA query_only = ON`。即使飞牛 Docker UI 中显示数据库目录不是只读挂载，代码层仍会拒绝写入飞牛数据库。
 
 未来如果需要 snapshot，可作为 V2 性能或兼容性优化另行实现；V1 不需要配置任何 snapshot 相关环境变量。
 

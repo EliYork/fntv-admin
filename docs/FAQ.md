@@ -10,7 +10,7 @@
 
 ## 会修改飞牛影视数据库吗？
 
-不会。飞牛数据库必须只读挂载，后端也使用 SQLite URI `mode=ro` 打开 `/fntv/trimmedia.db`，并设置 `PRAGMA query_only = ON`。V1 不生成 snapshot 快照，不 checkpoint 源库，不删除或修改源库 wal/shm 文件。备注、隐藏状态、管理员账号、任务日志等增强数据只写入 `/data/admin.db`。
+不会。飞牛默认部署不再依赖 Docker 层 `:ro`，后端会使用 SQLite URI `mode=ro` 打开 `/fntv/trimmedia.db`，并设置 `PRAGMA query_only = ON`。V1 不生成 snapshot 快照，不 checkpoint 源库，不删除或修改源库 wal/shm 文件。备注、隐藏状态、管理员账号、任务日志等增强数据只写入 `/data/admin.db`。`python scripts/verify_fntv_readonly.py` 必须通过。
 
 ## 公网访问安全吗？
 
@@ -31,23 +31,25 @@
 
 1. 不要反复修改 Docker Compose 挂载路径。
 2. 不要删除 `/data` 目录。
-3. 不要将飞牛数据库改为读写挂载。
+3. 不要绕过应用代码层只读保护。
 
 该问题通常是飞牛版本数据库字段差异导致的，需要在 fntv-admin 中做适配。提供诊断信息可以帮助开发者快速定位缺失的表或字段。
 
 ## 飞牛数据库报 "unable to open database file" 怎么办？
 
-V1 使用源库只读直连读取 `/fntv/trimmedia.db`。如果出现 `unable to open database file`，通常是挂载路径、文件权限或源库文件缺失导致后端无法只读打开数据库。
+V1 使用源库只读直连读取 `/fntv/trimmedia.db`。飞牛影视实机可能使用 SQLite WAL 模式；如果 Docker 层给 `/fntv` 追加 `:ro`，SQLite 可能因为无法访问或维护 `-wal`、`-shm`、锁相关文件而报 `unable to open database file`。
 
 检查：
 
 1. `/usr/local/apps/@appdata/trim.media/database` 是否挂载到 `/fntv`。
 2. 容器内 `/fntv/trimmedia.db` 是否存在。
-3. 飞牛数据库目录是否允许容器只读访问。
+3. Compose 中是否使用默认挂载 `/usr/local/apps/@appdata/trim.media/database:/fntv`，不要在飞牛实机下强制追加 `:ro`。
 4. 系统设置页点击"复制诊断信息"，查看 `availability` 和错误描述。
+
+去掉 Docker 层 `:ro` 不代表应用会写飞牛数据库。应用仍使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON`，并应通过 `python scripts/verify_fntv_readonly.py` 验证。
 
 不要做的事：
 
 1. 不要反复修改挂载路径。
-2. 不要将飞牛数据库改为读写挂载。
+2. 不要把飞牛数据库目录挂到 `/data`。
 3. 不要删除 `/data` 目录。

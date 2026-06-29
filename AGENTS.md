@@ -110,13 +110,17 @@ CREATE
 
 除非未来文档明确修改此规则，否则任何写入飞牛数据库的代码都是严重错误。
 
-Docker Compose 中飞牛数据库必须只读挂载：
+飞牛默认 Docker Compose 中数据库目录挂载为：
 
 ```yaml
-- /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+- /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
+飞牛影视实机可能使用 SQLite WAL 模式。Docker 层强制 `:ro` 可能阻止 SQLite 访问或维护 `-wal`、`-shm`、锁相关文件，导致 `unable to open database file`。如果出现该错误，可以去掉 Docker 层 `:ro`。
+
 后端连接飞牛数据库时必须使用 SQLite 只读模式。
+
+代码层必须使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON`，并通过 `scripts/verify_fntv_readonly.py` 验证不写飞牛数据库。
 
 V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成飞牛数据库 snapshot 快照，不在启动、状态检查或业务 API 中复制源库。状态判断只分为源库只读可用和源库不可用。
 
@@ -455,7 +459,7 @@ docker compose up -d
 ```yaml
 volumes:
   - ./data:/data
-  - /path/to/trimmedia.db:/fntv/trimmedia.db:ro
+  - /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
 默认 `docker-compose.yml` 应拉取 GHCR 成品镜像，不默认执行本地构建。
@@ -802,7 +806,7 @@ docker compose up -d 成功
 前端页面可打开
 /data/admin.db 可创建
 飞牛数据库不存在时不崩溃
-飞牛数据库只读挂载时可读取
+飞牛数据库源库可通过 SQLite mode=ro 只读打开
 ```
 
 如需验证本地构建，只能使用：
@@ -820,7 +824,7 @@ docker compose -f docker-compose.build.yml build 成功
 ```text
 飞牛数据库连接为只读
 写入 SQL 会失败
-Docker 挂载包含 :ro
+Docker Compose 默认挂载飞牛数据库目录到 /fntv，飞牛 WAL 场景下不强制 :ro
 代码中没有对 fntv 连接执行写入操作
 ```
 
@@ -972,7 +976,7 @@ Docker Compose-first 的飞牛影视增强管理后台。
 5. 后端 FastAPI。
 6. 使用多阶段 Dockerfile。
 7. FastAPI 托管前端构建后的静态文件。
-8. 飞牛数据库只读挂载到 /fntv/trimmedia.db。
+8. 飞牛数据库目录挂载到 /fntv，后端通过 SQLite mode=ro 只读打开 /fntv/trimmedia.db。
 9. 项目数据统一写入 /data。
 10. 所有增强数据写入 /data/admin.db。
 11. 禁止写入飞牛影视数据库。

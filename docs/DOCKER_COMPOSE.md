@@ -21,12 +21,28 @@ http://localhost:8080
 ```yaml
 volumes:
   - /usr/local/apps/@appdata/fntv-admin/data:/data
-  - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
+  - /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
-飞牛影视数据库目录挂载必须保留 `:ro`，后台只读读取 `/fntv/trimmedia.db`。`/data` 必须读写挂载，用于保存 `admin.db`、日志、缓存和备份。
+飞牛影视数据库目录挂载到 `/fntv`，后台只读读取 `/fntv/trimmedia.db`。`/data` 必须读写挂载，用于保存 `admin.db`、日志、缓存和备份。
 
-不要把飞牛影视数据库目录挂到 `/data`，也不要读写挂载飞牛影视数据库目录。
+不要把飞牛影视数据库目录挂到 `/data`。
+
+## 飞牛 SQLite WAL 挂载说明
+
+飞牛影视实机可能使用 SQLite WAL 模式。Docker 层给数据库目录追加 `:ro` 时，SQLite 可能因为无法访问或维护 `-wal`、`-shm`、锁相关文件而报：
+
+```text
+unable to open database file
+```
+
+如果遇到这个错误，优先确认 Compose 使用默认挂载：
+
+```yaml
+- /usr/local/apps/@appdata/trim.media/database:/fntv
+```
+
+不要把默认挂载改回 `:/fntv:ro`。项目的只读保护在应用代码层完成，而不是依赖 Docker 层 `:ro`。
 
 ## 源库只读直连
 
@@ -36,7 +52,7 @@ V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。
 
 `/data` 仍用于保存 `admin.db`、日志、缓存和备份。不要把飞牛影视数据库目录挂到 `/data`。
 
-如果飞牛 UI 中显示数据库目录为读写挂载，项目代码层仍使用只读连接保护源库。未来如需 snapshot，可作为 V2 优化另行实现。
+如果飞牛 UI 中显示数据库目录不是只读挂载，项目代码层仍使用只读连接保护源库。`python scripts/verify_fntv_readonly.py` 必须通过。未来如需 snapshot，可作为 V2 优化另行实现。
 
 ## 镜像地址
 
@@ -66,7 +82,7 @@ docker compose -f docker-compose.dockerhub.yml up -d
 
 ```text
 /usr/local/apps/@appdata/fntv-admin/data -> /data 读写
-/usr/local/apps/@appdata/trim.media/database -> /fntv 只读
+/usr/local/apps/@appdata/trim.media/database -> /fntv
 ```
 
 发布 Docker Hub 备用镜像需要在 GitHub Secrets 中配置：
