@@ -10,11 +10,11 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/data
-      - /usr/local/apps/@appdata/trim.media/database:/fntv:ro
+      - /usr/local/apps/@appdata/trim.media/database:/fntv
     environment:
       APP_NAME: ${APP_NAME:-fntv-admin}
       APP_ENV: ${APP_ENV:-production}
-      APP_SECRET_KEY: ${APP_SECRET_KEY:-change-me}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-change-this-to-a-long-random-string}
       FNTV_DB_PATH: ${FNTV_DB_PATH:-/fntv/trimmedia.db}
       ADMIN_DB_PATH: ${ADMIN_DB_PATH:-/data/admin.db}
       LOG_DIR: ${LOG_DIR:-/data/logs}

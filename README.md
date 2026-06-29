@@ -2,7 +2,7 @@
 
 `fntv-admin` 是从零开发的飞牛影视增强管理后台。项目官方只支持 Docker Compose 部署，生产环境优先使用一个容器运行 FastAPI 后端和 Vue 构建后的静态前端。
 
-飞牛 NAS 默认推荐直接拉取 Docker Hub 成品镜像运行，不推荐在飞牛本机 build 镜像。备用源可以切换到 GitHub Container Registry（GHCR） 主镜像。
+飞牛 NAS 默认推荐直接拉取 Docker Hub 成品镜像运行，不推荐在飞牛本机 build 镜像。GHCR 作为备用镜像源。
 
 核心边界：
 
@@ -19,7 +19,7 @@
 
 1. 复制 `docker-compose.yml` 到飞牛 NAS 的应用目录。
 
-2. 修改镜像地址，把 `REPLACE_WITH_YOUR_GITHUB_USERNAME` 改成 GitHub 用户名或组织名：
+2. 确认镜像地址。官方默认示例使用 `eliyork`：
 
 ```yaml
 services:
@@ -42,7 +42,7 @@ services:
 
     environment:
       APP_ENV: production
-      APP_SECRET_KEY: fntv-admin-change-this-secret-key
+      APP_SECRET_KEY: change-this-to-a-long-random-string
 
       FNTV_DB_PATH: /fntv/trimmedia.db
       ADMIN_DB_PATH: /data/admin.db
@@ -58,7 +58,7 @@ services:
 
 ```text
 飞牛影视数据库目录：/usr/local/apps/@appdata/trim.media/database -> /fntv
-fntv-admin 数据目录：/usr/local/apps/@appdata/fntv-admin/data -> /data 读写
+fntv-admin 数据目录：/vol1/Docker/fntv-admin/data -> /data 读写
 ```
 
 `FNTV_DB_PATH` 保持 `/fntv/trimmedia.db`。不要把飞牛影视数据库目录挂到 `/data`。
@@ -83,6 +83,8 @@ http://飞牛IP:8080
 
 首次进入时创建管理员账号。管理员密码只会以 hash 形式写入 `/data/admin.db`。
 
+`APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串，不要沿用示例值。
+
 ## 访问控制
 
 登录系统不会被删除。默认策略是：
@@ -99,20 +101,36 @@ TRUST_PROXY_HEADERS=false
 
 默认不信任 `X-Forwarded-For` / `X-Real-IP`。只有确认反向代理会正确覆盖这些请求头时，才谨慎设置 `TRUST_PROXY_HEADERS=true`，否则可能被伪造来源绕过本地/外部判断。
 
-## GHCR 镜像
+## 镜像地址
 
-GitHub Actions 会在以下场景构建并推送镜像到 GHCR：
+默认 Docker Hub 镜像：
+
+```text
+docker.io/eliyork/fntv-admin:latest
+docker.io/eliyork/fntv-admin:v0.7.2
+```
+
+备用 GHCR 镜像：
+
+```text
+ghcr.io/eliyork/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:v0.7.2
+```
+
+GitHub Actions 会在以下场景构建并推送镜像：
 
 - push 到 `main` 分支。
 - push `v*.*.*` 版本 tag。
 - 手动触发 `workflow_dispatch`。
 
-镜像名格式：
+如果 fork 后要发布自己的镜像，可以把示例中的 `eliyork` 改成自己的账号；官方默认示例保持 `eliyork`。
+
+GHCR 镜像名格式：
 
 ```text
-ghcr.io/<GitHub用户名>/fntv-admin:latest
-ghcr.io/<GitHub用户名>/fntv-admin:sha-<git-sha>
-ghcr.io/<GitHub用户名>/fntv-admin:<tag>
+ghcr.io/eliyork/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:sha-<git-sha>
+ghcr.io/eliyork/fntv-admin:<tag>
 ```
 
 如果仓库默认分支不是 `main`，需要在 `.github/workflows/docker-image.yml` 中把触发分支改成实际默认分支。
@@ -164,17 +182,18 @@ docker compose -f docker-compose.build.yml up -d
 
 ## 当前阶段
 
-当前实现覆盖 Phase 0 到 Phase 6 的基础骨架：
+当前实现已覆盖以下基础后台能力：
 
 - Docker Compose-first 项目结构。
 - FastAPI 后端与 Vue 前端。
 - 单容器生产 Dockerfile。
-- GHCR 自动构建发布 workflow，Docker Hub 作为可选备用发布目标。
+- Docker Hub 为默认成品镜像源，GHCR 作为备用发布目标。
 - 启动检查、健康检查、数据库状态。
 - 首次管理员初始化、登录、退出、当前用户、修改密码。
 - 仪表盘、观看历史、用户管理、媒体库基础 API 与页面。
+- 分页、真实用户/媒体标题映射。
 - Phase 7A 报表中心基础统计：总览、播放趋势、活跃用户榜、热门媒体榜、媒体类型分布、分辨率分布。
-- 系统设置支持本地访问和外部访问认证策略：本地可免登录，外部可要求登录或禁止访问。
+- 系统设置支持主题、本地访问认证策略和外部访问认证策略；系统诊断页提供飞牛数据库状态、schema 诊断、只读状态和复制诊断信息。
 
 飞牛数据库表结构不确定时，页面会显示空状态或数据库异常提示，不会导致应用崩溃。
 

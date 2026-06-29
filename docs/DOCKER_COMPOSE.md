@@ -2,7 +2,7 @@
 
 `docker-compose.yml` 是 `fntv-admin` 唯一官方生产部署入口。
 
-飞牛 NAS 默认推荐使用 GHCR 成品镜像，不推荐在飞牛本机 build。默认 `docker-compose.yml` 使用 GHCR `image` 拉取镜像。Docker Hub 仅作为 GHCR 下载较慢时的备用镜像源。
+飞牛 NAS 默认推荐使用 Docker Hub 成品镜像，不推荐在飞牛本机 build。默认 `docker-compose.yml` 使用 Docker Hub `image` 拉取镜像，GHCR 作为备用镜像源。
 
 ## 启动
 
@@ -16,11 +16,42 @@ docker compose up -d
 http://localhost:8080
 ```
 
+推荐 Compose 示例：
+
+```yaml
+services:
+  fntv-admin:
+    image: docker.io/eliyork/fntv-admin:latest
+    container_name: fntv-admin
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - /vol1/Docker/fntv-admin/data:/data
+      - /usr/local/apps/@appdata/trim.media/database:/fntv
+
+    environment:
+      APP_ENV: production
+      APP_SECRET_KEY: change-this-to-a-long-random-string
+
+      FNTV_DB_PATH: /fntv/trimmedia.db
+      ADMIN_DB_PATH: /data/admin.db
+      LOG_DIR: /data/logs
+      CACHE_DIR: /data/cache
+      BACKUP_DIR: /data/backup
+      DEFAULT_PAGE_SIZE: "20"
+      LOG_RETENTION_DAYS: "14"
+```
+
+`APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串。
+
 ## 必需挂载
 
 ```yaml
 volumes:
-  - /usr/local/apps/@appdata/fntv-admin/data:/data
+  - /vol1/Docker/fntv-admin/data:/data
   - /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
@@ -76,39 +107,35 @@ TRUST_PROXY_HEADERS=true
 
 ## 镜像地址
 
-默认镜像地址格式：
-
-```text
-ghcr.io/eliyork/fntv-admin:latest
-```
-
-备用 Docker Hub 镜像地址格式：
+默认 Docker Hub 镜像地址：
 
 ```text
 docker.io/eliyork/fntv-admin:latest
+docker.io/eliyork/fntv-admin:v0.7.2
 ```
 
-如果 GHCR 下载较慢，可以使用 `docker-compose.dockerhub.yml`：
-
-```bash
-docker compose -f docker-compose.dockerhub.yml up -d
-```
-
-两个 compose 文件的挂载规则保持一致：
+备用 GHCR 镜像地址：
 
 ```text
-/usr/local/apps/@appdata/fntv-admin/data -> /data 读写
+ghcr.io/eliyork/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:v0.7.2
+```
+
+默认 Compose 的挂载规则：
+
+```text
+/vol1/Docker/fntv-admin/data -> /data 读写
 /usr/local/apps/@appdata/trim.media/database -> /fntv
 ```
 
-发布 Docker Hub 备用镜像需要在 GitHub Secrets 中配置：
+发布 Docker Hub 镜像需要在 GitHub Secrets 中配置：
 
 ```text
 DOCKERHUB_USERNAME
 DOCKERHUB_TOKEN
 ```
 
-`DOCKERHUB_TOKEN` 应使用 Docker Hub access token，不要使用 Docker Hub 明文密码。未配置时 GHCR 镜像发布不受影响。
+`DOCKERHUB_TOKEN` 应使用 Docker Hub access token，不要使用 Docker Hub 明文密码。
 
 ## 单容器生产模型
 

@@ -63,27 +63,29 @@ frontend/
 
 ---
 
-### 2.2.1 默认部署优先 GHCR 成品镜像
+### 2.2.1 默认部署优先 Docker Hub 成品镜像
 
-官方 Docker Compose 部署文档默认应优先使用 GHCR 成品镜像：
-
-```text
-ghcr.io/<GitHub 用户或组织>/fntv-admin:latest
-```
-
-Docker Hub 只能作为备用镜像源，用于 GHCR 在飞牛 NAS 上下载较慢的场景：
+官方 Docker Compose 部署文档默认应优先使用 Docker Hub 成品镜像：
 
 ```text
-docker.io/<DockerHub 用户>/fntv-admin:latest
+docker.io/eliyork/fntv-admin:latest
+docker.io/eliyork/fntv-admin:v0.7.2
 ```
 
-不要把默认镜像源改成 Docker Hub，不要移除 GHCR 发布。
+GHCR 作为备用镜像源：
+
+```text
+ghcr.io/eliyork/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:v0.7.2
+```
+
+不要把默认镜像源改回 GHCR，不要移除 GHCR 备用发布。
 
 飞牛 NAS 不要求本机构建镜像。
 
 `docker-compose.yml` 默认使用 `image`。
 
-`docker-compose.dockerhub.yml` 仅作为 Docker Hub 备用镜像部署文件，挂载和环境变量必须与默认 Compose 保持一致。
+如未来提供备用镜像 compose 文件，挂载和环境变量必须与默认 Compose 保持一致。
 
 `docker-compose.build.yml` 仅用于开发者本地构建和测试。
 
@@ -116,7 +118,7 @@ CREATE
 - /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
-飞牛影视实机可能使用 SQLite WAL 模式。Docker 层强制 `:ro` 可能阻止 SQLite 访问或维护 `-wal`、`-shm`、锁相关文件，导致 `unable to open database file`。如果出现该错误，可以去掉 Docker 层 `:ro`。
+飞牛影视实机可能使用 SQLite WAL 模式。Docker 层强制 `:ro` 可能阻止 SQLite 访问或维护 `-wal`、`-shm`、锁相关文件，导致 `unable to open database file`。默认 Compose 的 `/fntv` 挂载不加 `:ro`。
 
 后端连接飞牛数据库时必须使用 SQLite 只读模式。
 
@@ -415,6 +417,7 @@ frontend/src/
 任务中心
 日志中心
 系统设置
+系统诊断
 ```
 
 页面可以先占位，但路由和导航必须稳定。
@@ -463,15 +466,23 @@ volumes:
   - /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
-默认 `docker-compose.yml` 应拉取 GHCR 成品镜像，不默认执行本地构建。
+默认 `docker-compose.yml` 应拉取 Docker Hub 成品镜像，不默认执行本地构建。
 
-如果 GHCR 下载较慢，可以使用 Docker Hub 备用 compose：
+默认镜像：
 
-```bash
-docker compose -f docker-compose.dockerhub.yml up -d
+```text
+docker.io/eliyork/fntv-admin:latest
+docker.io/eliyork/fntv-admin:v0.7.2
 ```
 
-以上仍属于 Docker Compose 部署，不是新的官方部署方式。Docker Hub 发布需要 GitHub Secrets `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`，其中 token 必须使用 Docker Hub access token，不要使用明文密码。
+备用 GHCR 镜像：
+
+```text
+ghcr.io/eliyork/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:v0.7.2
+```
+
+Docker Hub 发布需要 GitHub Secrets `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`，其中 token 必须使用 Docker Hub access token，不要使用明文密码。
 
 开发者本地构建必须使用：
 
@@ -742,6 +753,7 @@ API 鉴权
 任务中心
 日志中心
 系统设置
+系统诊断
 文档和 V1 发布
 ```
 
@@ -1018,6 +1030,7 @@ Phase 1：
 - 初始化 /data/admin.db
 - 前端提供登录页占位和后台布局占位
 - 前端页面包括：仪表盘、观看历史、用户管理、媒体库、报表中心、任务中心、日志中心、系统设置
+- 系统诊断页包括：飞牛数据库状态、schema 诊断、只读状态、复制诊断信息
 - 不实现复杂业务查询
 - 不实现复杂图表
 - 不写入飞牛数据库
