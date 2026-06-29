@@ -449,9 +449,17 @@ def _timestamp_seconds_sql(expr: str) -> str:
     return f"(CASE WHEN {expr} IS NULL THEN NULL WHEN CAST({expr} AS REAL) > 1000000000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
 
 
-def _duration_seconds_sql(expr: str | None) -> str:
+def _duration_seconds_sql(expr: str | None, *, runtime: bool = False) -> str:
     if not expr:
         return "0"
+    if runtime:
+        return (
+            f"(CASE WHEN {expr} IS NULL OR {expr} = '' THEN 0 "
+            f"WHEN CAST({expr} AS REAL) > 1000000 THEN CAST({expr} AS REAL) / 1000 "
+            f"WHEN CAST({expr} AS REAL) BETWEEN 1 AND 600 AND CAST({expr} AS REAL) = CAST(CAST({expr} AS REAL) AS INTEGER) "
+            f"THEN CAST({expr} AS REAL) * 60 "
+            f"ELSE CAST({expr} AS REAL) END)"
+        )
     return f"(CASE WHEN {expr} IS NULL OR {expr} = '' THEN 0 WHEN CAST({expr} AS REAL) > 1000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
 
 
@@ -490,7 +498,7 @@ def _count_distinct_recent(user_col: str | None, seconds_expr: str | None, days:
 
 def _avg_progress_expr(schema: adapter.FntvSchemaInfo) -> str:
     position_expr = _duration_seconds_sql(_qualified(schema.plays.fields.get("position"), "p"))
-    runtime_expr = _duration_seconds_sql(_qualified(schema.items.fields.get("runtime"), "i"))
+    runtime_expr = _duration_seconds_sql(_qualified(schema.items.fields.get("runtime"), "i"), runtime=True)
     watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
     if not schema.items.table or not schema.plays.fields.get("position") or not schema.items.fields.get("runtime"):
         return "NULL"

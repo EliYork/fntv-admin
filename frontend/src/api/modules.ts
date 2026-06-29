@@ -154,27 +154,27 @@ export function hideMedia(guid: string, hidden: boolean) {
 }
 
 export function fetchReportOverview() {
-  return getApi<ReportOverview>('/reports/overview')
+  return getApi<ReportOverview>('/reports/overview', undefined, { suppressGlobalError: true })
 }
 
 export function fetchReportPlayTrend(days: number | string = 30) {
-  return getApi<PlayTrendItem[]>('/reports/play-trend', { days })
+  return getApi<PlayTrendItem[]>('/reports/play-trend', { days }, { suppressGlobalError: true })
 }
 
 export function fetchReportTopUsers(params: { days: string; limit: number }) {
-  return getApi<TopUserReportItem[]>('/reports/top-users', params)
+  return getApi<TopUserReportItem[]>('/reports/top-users', params, { suppressGlobalError: true })
 }
 
 export function fetchReportTopMedia(params: { days: string; limit: number; mode?: 'episode' | 'series' }) {
-  return getApi<TopMediaReportItem[]>('/reports/top-media', params)
+  return getApi<TopMediaReportItem[]>('/reports/top-media', params, { suppressGlobalError: true })
 }
 
 export function fetchReportMediaTypeDistribution() {
-  return getApi<MediaTypeDistributionItem[]>('/reports/media-type-distribution')
+  return getApi<MediaTypeDistributionItem[]>('/reports/media-type-distribution', undefined, { suppressGlobalError: true })
 }
 
 export function fetchReportResolutionDistribution(days: string) {
-  return getApi<ResolutionDistributionItem[]>('/reports/resolution-distribution', { days })
+  return getApi<ResolutionDistributionItem[]>('/reports/resolution-distribution', { days }, { suppressGlobalError: true })
 }
 
 export interface LogItem {

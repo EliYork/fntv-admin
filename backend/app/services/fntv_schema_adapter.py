@@ -65,6 +65,10 @@ PLAY_FIELD_PRIORITIES = {
     "type": ("type", "media_type"),
 }
 
+MEDIA_STREAM_TABLE_HINTS = ("media_stream", "media_streams", "item_media_stream", "video_stream")
+MEDIA_STREAM_ITEM_FIELDS = ("item_guid", "item_id", "media_guid", "media_id", "guid")
+MEDIA_STREAM_DURATION_FIELDS = ("duration", "duration_seconds", "runtime", "run_time", "length")
+
 
 @dataclass(frozen=True)
 class FntvTableInfo:
@@ -159,6 +163,17 @@ def normalize_duration_seconds(value: Any) -> int | None:
     return int(number)
 
 
+def normalize_runtime_seconds(value: Any) -> int | None:
+    number = _to_float(value)
+    if number is None or number < 0:
+        return None
+    if number > 1_000_000:
+        number = number / 1000
+    elif float(number).is_integer() and 1 <= number <= 600:
+        number = number * 60
+    return int(number)
+
+
 def format_duration(seconds: int | float | None) -> str:
     if seconds is None:
         return "-"
@@ -169,9 +184,9 @@ def format_duration(seconds: int | float | None) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def format_play_progress(position_value: Any, runtime_value: Any, watched: bool) -> dict[str, Any]:
+def format_play_progress(position_value: Any, runtime_value: Any, watched: bool, runtime_is_seconds: bool = False) -> dict[str, Any]:
     position_seconds = normalize_duration_seconds(position_value)
-    runtime_seconds = normalize_duration_seconds(runtime_value)
+    runtime_seconds = normalize_duration_seconds(runtime_value) if runtime_is_seconds else normalize_runtime_seconds(runtime_value)
     if watched and position_seconds is None and runtime_seconds is None:
         return {"position_seconds": None, "runtime_seconds": None, "progress_percent": 100, "progress": "已完成"}
     if position_seconds is not None and runtime_seconds and runtime_seconds > 0:
@@ -677,9 +692,41 @@ def _lookup_items(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: list[
     placeholders = ",".join("?" for _ in keys)
     rows = conn.execute(f"SELECT * FROM {quote_identifier(table)} WHERE {quote_identifier(guid_col)} IN ({placeholders})", keys).fetchall()
     result = {str(row[guid_col]): dict(row) for row in rows}
+    stream_durations = _lookup_media_stream_durations(conn, schema, keys)
     for key in list(result):
         result[key]["__hierarchy_title"] = _hierarchy_title(conn, schema, result[key], max_depth=4)
+        if key in stream_durations:
+            result[key]["__stream_runtime_seconds"] = stream_durations[key]
     return result
+
+
+def _lookup_media_stream_durations(conn: sqlite3.Connection, schema: FntvSchemaInfo, guids: list[str]) -> dict[str, int]:
+    keys = [str(value) for value in guids if value not in (None, "")]
+    if not keys:
+        return {}
+    for table_name, table in schema.tables.items():
+        lower_name = table_name.lower()
+        if not any(hint in lower_name for hint in MEDIA_STREAM_TABLE_HINTS):
+            continue
+        item_col = find_column(table, MEDIA_STREAM_ITEM_FIELDS)
+        duration_col = find_column(table, MEDIA_STREAM_DURATION_FIELDS)
+        if not item_col or not duration_col:
+            continue
+        placeholders = ",".join("?" for _ in keys)
+        rows = conn.execute(
+            f"SELECT {quote_identifier(item_col)} AS item_guid, MAX({quote_identifier(duration_col)}) AS duration "
+            f"FROM {quote_identifier(table_name)} "
+            f"WHERE {quote_identifier(item_col)} IN ({placeholders}) "
+            f"GROUP BY {quote_identifier(item_col)}",
+            keys,
+        ).fetchall()
+        result: dict[str, int] = {}
+        for row in rows:
+            runtime = normalize_duration_seconds(row["duration"])
+            if runtime is not None:
+                result[str(row["item_guid"])] = runtime
+        return result
+    return {}
 
 
 def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict[str, Any]], items: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -691,7 +738,11 @@ def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict
     username = _display_user(user, schema) or user_guid
     title = item.get("__hierarchy_title") or _display_item(item, schema) or item_guid
     watched = _truthy(_row_value(row, fields.get("watched")))
-    progress = format_play_progress(_row_value(row, fields.get("position")), _row_value(item, schema.items.fields.get("runtime")), watched)
+    runtime_is_seconds = "__stream_runtime_seconds" in item
+    runtime_value = item.get("__stream_runtime_seconds")
+    if not runtime_is_seconds:
+        runtime_value = _row_value(item, schema.items.fields.get("runtime"))
+    progress = format_play_progress(_row_value(row, fields.get("position")), runtime_value, watched, runtime_is_seconds=runtime_is_seconds)
     return {
         "id": str(_row_value(row, fields.get("id")) or row.get("__rowid") or ""),
         "user_guid": user_guid,
@@ -888,7 +939,7 @@ def _media_row(row: dict[str, Any], schema: FntvSchemaInfo, profiles: dict[str, 
     fallback_title = _media_hierarchy_fallback_title(row, schema, parent_titles) or raw_title
     title = profile.display_title if profile and profile.display_title else fallback_title
     row_stats = stats.get(guid, {})
-    runtime_seconds = normalize_duration_seconds(_row_value(row, schema.items.fields.get("runtime")))
+    runtime_seconds = normalize_runtime_seconds(_row_value(row, schema.items.fields.get("runtime")))
     parent_guid = str(_row_value(row, schema.items.fields.get("parent_guid")) or "")
     return {
         "guid": guid,

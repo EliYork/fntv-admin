@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import type { AxiosRequestConfig } from 'axios'
 import type { ApiResponse } from '../types/api'
 import {
   clearStoredToken,
@@ -11,6 +12,7 @@ import {
 declare module 'axios' {
   export interface AxiosRequestConfig {
     skipAuthRecheck?: boolean
+    suppressGlobalError?: boolean
   }
 }
 
@@ -23,6 +25,8 @@ let redirectingToLogin = false
 let authRecheck: Promise<boolean> | null = null
 let lastAuthErrorEndpoint = ''
 let lastAuthErrorStatus: number | null = null
+let lastToastMessage = ''
+let lastToastAt = 0
 
 apiClient.interceptors.request.use((config) => {
   const token = getStoredToken()
@@ -39,8 +43,9 @@ apiClient.interceptors.response.use(
       return Promise.reject(error)
     }
     const status = error.response?.status as number | undefined
+    const suppressGlobalError = Boolean(error.config?.suppressGlobalError)
     rememberAuthError(error.config?.url, status)
-    const message = error.response?.data?.error?.message || '请求失败'
+    const message = normalizeErrorMessage(status, error.response?.data?.error?.message)
     const action = getUnauthorizedAction({
       status,
       url: error.config?.url,
@@ -48,25 +53,26 @@ apiClient.interceptors.response.use(
     })
     if (action === 'expire') {
       expireSession()
+      showErrorToast('请先登录')
       return Promise.reject(error)
     }
     if (action === 'recheck') {
       const stillValid = await recheckCurrentSession()
       if (!stillValid) {
         expireSession()
+        showErrorToast('请先登录')
         return Promise.reject(error)
       }
-      ElMessage.error(message)
       return Promise.reject(error)
     }
     if (status === 401) return Promise.reject(new Error(message))
-    if (status !== 401) ElMessage.error(message)
+    if (!suppressGlobalError) showErrorToast(message)
     return Promise.reject(error)
   }
 )
 
-export async function getApi<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-  const response = await apiClient.get<ApiResponse<T>>(url, { params })
+export async function getApi<T>(url: string, params?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<T> {
+  const response = await apiClient.get<ApiResponse<T>>(url, { ...config, params })
   if (!response.data.success) {
     throw new Error(response.data.error.message)
   }
@@ -110,6 +116,24 @@ function expireSession(): void {
     const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`
     window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`)
   }
+}
+
+function normalizeErrorMessage(status: number | undefined, message: unknown): string {
+  if (status === 403) return '无权限或访问被禁止'
+  if (typeof message === 'string' && message.trim()) {
+    if (status !== 401 && message.includes('请先登录')) return '请求失败，请稍后重试'
+    return message
+  }
+  if (status && status >= 500) return '服务器暂时不可用'
+  return '请求失败'
+}
+
+function showErrorToast(message: string): void {
+  const now = Date.now()
+  if (message === lastToastMessage && now - lastToastAt < 3000) return
+  lastToastMessage = message
+  lastToastAt = now
+  ElMessage.error(message)
 }
 
 async function recheckCurrentSession(): Promise<boolean> {

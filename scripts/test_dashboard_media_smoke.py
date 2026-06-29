@@ -29,6 +29,7 @@ def _connect() -> sqlite3.Connection:
             filename TEXT,
             type TEXT,
             parent_guid TEXT,
+            runtime INTEGER,
             season_number INTEGER,
             episode_number INTEGER
         );
@@ -38,6 +39,7 @@ def _connect() -> sqlite3.Connection:
             item_guid TEXT,
             update_time INTEGER,
             create_time INTEGER,
+            ts INTEGER,
             visible INTEGER DEFAULT 1
         );
         """
@@ -139,6 +141,50 @@ def test_users_sort_rejects_unlisted_field(conn: sqlite3.Connection) -> None:
     assert [row["guid"] for row in page["items"]] == ["u1", "u2"]
 
 
+def test_runtime_normalization_treats_small_item_runtime_as_minutes(conn: sqlite3.Connection) -> None:
+    assert adapter.normalize_runtime_seconds(44) == 2_640
+    assert adapter.normalize_runtime_seconds(3_600) == 3_600
+    assert adapter.normalize_runtime_seconds(3_600_000) == 3_600
+    progress = adapter.format_play_progress(1_261, 44, watched=False)
+    assert progress["runtime_seconds"] == 2_640
+    assert progress["progress"] == "00:21:01 / 00:44:00"
+    assert progress["progress_percent"] == 47.8
+
+
+def test_play_rows_prefer_batched_media_stream_duration(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.execute('CREATE TABLE media_stream (item_guid TEXT, duration INTEGER)')
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute('INSERT INTO item (guid, title, type, runtime) VALUES (?, ?, ?, ?)', ("m1", "电影一", "Movie", 44))
+    conn.execute('INSERT INTO media_stream (item_guid, duration) VALUES (?, ?)', ("m1", 3_600))
+    conn.execute(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, ts, visible) VALUES (?, ?, ?, ?, ?, ?)',
+        ("u1", "m1", now, now, 1_261, 1),
+    )
+    schema = adapter.detect_schema(conn=conn)
+    raw_rows, _ = adapter._play_rows(conn, schema, 1, 20, {})
+    rows = adapter._hydrate_play_rows(conn, schema, raw_rows)
+    assert rows[0]["runtime_seconds"] == 3_600
+    assert rows[0]["progress"] == "00:21:01 / 01:00:00"
+
+
+def test_media_stream_duration_does_not_use_item_runtime_minutes_heuristic(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.execute('CREATE TABLE media_stream (item_guid TEXT, duration INTEGER)')
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute('INSERT INTO item (guid, title, type, runtime) VALUES (?, ?, ?, ?)', ("m1", "电影一", "Movie", 44))
+    conn.execute('INSERT INTO media_stream (item_guid, duration) VALUES (?, ?)', ("m1", 44))
+    conn.execute(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, ts, visible) VALUES (?, ?, ?, ?, ?, ?)',
+        ("u1", "m1", now, now, 10, 1),
+    )
+    schema = adapter.detect_schema(conn=conn)
+    raw_rows, _ = adapter._play_rows(conn, schema, 1, 20, {})
+    rows = adapter._hydrate_play_rows(conn, schema, raw_rows)
+    assert rows[0]["runtime_seconds"] == 44
+    assert rows[0]["progress"] == "00:00:10 / 00:00:44"
+
+
 def main() -> None:
     for test in (
         test_today_plays_normalizes_millisecond_timestamps,
@@ -147,6 +193,9 @@ def main() -> None:
         test_media_title_deduplicates_repeated_parent_and_marker,
         test_users_can_sort_by_play_count_desc,
         test_users_sort_rejects_unlisted_field,
+        test_runtime_normalization_treats_small_item_runtime_as_minutes,
+        test_play_rows_prefer_batched_media_stream_duration,
+        test_media_stream_duration_does_not_use_item_runtime_minutes_heuristic,
     ):
         conn = _connect()
         try:
