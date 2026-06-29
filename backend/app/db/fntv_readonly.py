@@ -12,7 +12,7 @@ WRITE_KEYWORDS = ("insert", "update", "delete", "drop", "alter", "vacuum", "rein
 
 
 def _readonly_uri(path: Path) -> str:
-    return f"file:{path.resolve().as_posix()}?mode=ro"
+    return f"file:{path.as_posix()}?mode=ro"
 
 
 def open_fntv_connection() -> sqlite3.Connection:

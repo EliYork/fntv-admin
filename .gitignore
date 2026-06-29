@@ -28,6 +28,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .tmp_pycache/
+.tmp_smoke/
 .venv/
 venv/
 htmlcov/

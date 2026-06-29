@@ -53,7 +53,7 @@ def snapshot_status() -> dict[str, Any]:
 
 
 def _readonly_uri(path: Path) -> str:
-    return f"file:{path.resolve().as_posix()}?mode=ro"
+    return f"file:{path.as_posix()}?mode=ro"
 
 
 def _can_read_sqlite_schema(path: Path) -> bool:

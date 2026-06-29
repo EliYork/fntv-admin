@@ -37,7 +37,7 @@ def quote_identifier(identifier: str) -> str:
 
 
 def _readonly_uri(path: Path) -> str:
-    return f"file:{path.resolve().as_posix()}?mode=ro"
+    return f"file:{path.as_posix()}?mode=ro"
 
 
 def _inspect_schema_with_connection(conn: sqlite3.Connection) -> dict[str, TableInfo]:

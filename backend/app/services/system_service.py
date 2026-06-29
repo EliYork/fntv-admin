@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.fntv_readonly import open_fntv_connection
 from app.db.fntv_snapshot import (
-    resolve_active_fntv_database,
+    set_active_database,
     snapshot_status,
 )
 from app.db.migrations import run_migrations
@@ -51,7 +52,6 @@ def storage_status() -> dict[str, Any]:
 
 def database_status(detail: bool = False) -> dict[str, Any]:
     snap_info = snapshot_status()
-    resolved = resolve_active_fntv_database()
     fntv: dict[str, Any] = {
         "path": snap_info["source_path_container"],
         "exists": snap_info["source_exists"],
@@ -67,7 +67,7 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "snapshot_dir_writable": snap_info["snapshot_dir_writable"],
         "snapshot_tmp_path": snap_info["snapshot_tmp_path"],
         "snapshot_last_refresh_at": snap_info["snapshot_last_refresh_at"],
-        "snapshot_ok": resolved["snapshot_ok"],
+        "snapshot_ok": None,
         "snapshot_error": snap_info["snapshot_error"],
         "snapshot_error_type": snap_info["snapshot_error_type"],
         "snapshot_error_message": snap_info["snapshot_error_message"],
@@ -76,10 +76,13 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "error_type": None,
         "error_message": None,
         "warnings": [],
-        "source_direct_ok": resolved["source_direct_ok"],
-        "active_database": resolved["active_database"],
-        "active_db_path": resolved["active_db_path"],
-        "availability": resolved["availability"],
+        "source_direct_ok": False,
+        "source_direct_error_type": None,
+        "source_direct_error_message": None,
+        "source_test_query": "sqlite_master",
+        "active_database": "none",
+        "active_db_path": None,
+        "availability": "unavailable",
         "degraded": False,
         "fallback_to_source": False,
         "detected_table_count": 0,
@@ -97,27 +100,44 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         },
     }
 
-    if resolved["active_database"] == "none":
-        fntv["error"] = "FNTV_DATABASE_UNAVAILABLE"
-        fntv["error_type"] = "DatabaseUnavailable"
-        fntv["error_message"] = "飞牛影视数据库不可用，请检查源库只读挂载"
-    else:
-        try:
-            with open_fntv_connection() as conn:
-                diag = schema_diagnostics(conn=conn, active_db_path=resolved["active_db_path"], detail=detail)
-            fntv.update(diag)
-            fntv["ok"] = bool(diag.get("ok"))
-            if fntv["ok"]:
-                fntv["error"] = None
-                fntv["error_type"] = None
-                fntv["error_message"] = None
-        except Exception as exc:  # noqa: BLE001
-            fntv.update({
+    try:
+        with open_fntv_connection() as conn:
+            conn.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
+            set_active_database("source")
+            fntv.update(
+                {
+                    "source_direct_ok": True,
+                    "source_direct_error_type": None,
+                    "source_direct_error_message": None,
+                    "active_database": "source",
+                    "active_db_path": snap_info["source_path_container"],
+                    "availability": "available",
+                }
+            )
+            diag = schema_diagnostics(conn=conn, detail=detail)
+        fntv.update(diag)
+        fntv["ok"] = bool(diag.get("ok"))
+        if fntv["ok"]:
+            fntv["error"] = None
+            fntv["error_type"] = None
+            fntv["error_message"] = None
+    except Exception as exc:  # noqa: BLE001
+        set_active_database("none")
+        source_error_type, source_error_message = _source_direct_error(exc)
+        fntv.update(
+            {
                 "ok": False,
-                "error": "FNTV_DIAG_FAILED",
-                "error_type": type(exc).__name__,
-                "error_message": str(exc),
-            })
+                "source_direct_ok": False,
+                "source_direct_error_type": source_error_type,
+                "source_direct_error_message": source_error_message,
+                "active_database": "none",
+                "active_db_path": None,
+                "availability": "unavailable",
+                "error": "FNTV_DATABASE_UNAVAILABLE",
+                "error_type": "DatabaseUnavailable",
+                "error_message": "飞牛影视数据库不可用，请检查源库只读挂载",
+            }
+        )
 
     if not snap_info["source_exists"]:
         fntv["error"] = fntv.get("error") or "FNTV_DATABASE_NOT_FOUND"
@@ -130,6 +150,29 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "ok": settings.admin_db_path.exists(),
     }
     return {"fntv": fntv, "admin": admin}
+
+
+def _source_direct_error(exc: Exception) -> tuple[str, str]:
+    if hasattr(exc, "code"):
+        error_type = str(getattr(exc, "code"))
+    elif isinstance(exc, sqlite3.Error):
+        error_type = type(exc).__name__
+    else:
+        error_type = type(exc).__name__
+    message = str(getattr(exc, "message", None) or exc or "源库只读打开失败")
+    return error_type, _sanitize_source_error(message)
+
+
+def _sanitize_source_error(message: str) -> str:
+    replacements = {
+        str(settings.fntv_db_path): "<fntv_db>",
+        settings.fntv_db_path.as_posix(): "<fntv_db>",
+    }
+    result = message
+    for needle, replacement in replacements.items():
+        if needle:
+            result = result.replace(needle, replacement)
+    return result
 
 
 def health() -> dict[str, Any]:
