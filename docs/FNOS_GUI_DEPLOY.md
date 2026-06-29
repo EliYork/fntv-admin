@@ -16,10 +16,8 @@
 默认部署前必须修改 GHCR 镜像名：
 
 ```yaml
-image: ghcr.io/<GitHub用户名>/fntv-admin:latest
+image: ghcr.io/eliyork/fntv-admin:latest
 ```
-
-把 `<GitHub用户名>` 改成 GitHub 用户名或组织名。
 
 如果 GHCR 下载慢，可以改用 `docker-compose.dockerhub.yml`，并修改 Docker Hub 镜像名：
 
@@ -77,13 +75,13 @@ http://飞牛IP:8080
 在飞牛 Docker 镜像页面拉取：
 
 ```text
-ghcr.io/<GitHub用户名>/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:latest
 ```
 
 如果 GHCR 下载慢，可以改拉 Docker Hub 备用镜像：
 
 ```text
-docker.io/<DockerHub用户名>/fntv-admin:latest
+docker.io/eliyork/fntv-admin:latest
 ```
 
 然后创建容器：
@@ -107,7 +105,7 @@ docker.io/<DockerHub用户名>/fntv-admin:latest
 如果 GHCR 在当前网络下下载较慢，可以使用 Docker Hub 备用镜像：
 
 ```text
-docker.io/<DockerHub用户名>/fntv-admin:latest
+docker.io/eliyork/fntv-admin:latest
 ```
 
 发布 Docker Hub 镜像需要在 GitHub Secrets 中配置：

@@ -59,15 +59,13 @@ V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。
 默认镜像地址格式：
 
 ```text
-ghcr.io/<GitHub用户名>/fntv-admin:latest
+ghcr.io/eliyork/fntv-admin:latest
 ```
-
-使用前把 `docker-compose.yml` 中的 `REPLACE_WITH_YOUR_GITHUB_USERNAME` 替换为自己的 GitHub 用户名或组织名。
 
 备用 Docker Hub 镜像地址格式：
 
 ```text
-docker.io/<DockerHub用户名>/fntv-admin:latest
+docker.io/eliyork/fntv-admin:latest
 ```
 
 如果 GHCR 下载较慢，可以使用 `docker-compose.dockerhub.yml`：
@@ -75,8 +73,6 @@ docker.io/<DockerHub用户名>/fntv-admin:latest
 ```bash
 docker compose -f docker-compose.dockerhub.yml up -d
 ```
-
-使用前把 `docker-compose.dockerhub.yml` 中的 `REPLACE_WITH_YOUR_DOCKERHUB_USERNAME` 替换为自己的 Docker Hub 用户名。
 
 两个 compose 文件的挂载规则保持一致：
 
