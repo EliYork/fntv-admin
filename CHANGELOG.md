@@ -13,3 +13,4 @@
 - 增加 Phase 7A 报表中心基础统计，包含总览、播放趋势、活跃用户榜、热门媒体榜、媒体类型分布和分辨率分布。
 - 报表接口在后端 SQL 层聚合飞牛影视只读源库数据，不写入飞牛数据库，不恢复 snapshot。
 - 调整飞牛默认 Compose 数据库挂载为 `/usr/local/apps/@appdata/trim.media/database:/fntv`，记录 WAL/SHM 场景下 Docker 层 `:ro` 可能导致 `unable to open database file`；应用代码层仍使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON` 保证只读。
+- 增加本地/外部访问认证策略设置：默认本地和外部都需要登录，可在系统设置中开启本地免登录，外部访问可保持登录保护或禁止访问；代理头默认不信任。

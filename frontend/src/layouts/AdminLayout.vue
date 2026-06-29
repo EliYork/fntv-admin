@@ -20,8 +20,9 @@
         </div>
         <div class="user-row">
           <el-switch v-model="darkMode" inline-prompt active-text="暗" inactive-text="亮" />
+          <el-tag v-if="auth.isLocalNoAuth" size="small" type="warning" effect="light">本地模式</el-tag>
           <span>{{ auth.user?.username || 'admin' }}</span>
-          <el-button size="small" :icon="SwitchButton" @click="handleLogout">退出</el-button>
+          <el-button v-if="!auth.isLocalNoAuth" size="small" :icon="SwitchButton" @click="handleLogout">退出</el-button>
         </div>
       </el-header>
       <el-main class="main-view">

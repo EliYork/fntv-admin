@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     default_page_size: int = 20
     log_retention_days: int = 14
     access_token_expire_minutes: int = 60 * 24
+    trust_proxy_headers: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

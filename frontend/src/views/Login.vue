@@ -4,6 +4,8 @@
       <h1>fntv-admin</h1>
       <p>{{ initialized ? '登录飞牛影视增强管理后台' : '首次启动，创建管理员账号' }}</p>
 
+      <el-alert v-if="auth.accessDeniedMessage" :title="auth.accessDeniedMessage" type="error" show-icon :closable="false" />
+
       <el-form :model="form" label-position="top" @submit.prevent>
         <el-form-item label="用户名">
           <el-input v-model="form.username" autocomplete="username" />
@@ -36,6 +38,10 @@ const error = ref('')
 const form = reactive({ username: '', password: '' })
 
 async function loadStatus() {
+  if (auth.isAuthenticated) {
+    await router.push('/dashboard')
+    return
+  }
   try {
     const status = await fetchAuthStatus()
     initialized.value = status.admin_initialized

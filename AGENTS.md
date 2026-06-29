@@ -144,6 +144,7 @@ V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成飞牛数据库 snap
 操作审计
 报表缓存
 API Token
+本地/外部访问认证策略
 ```
 
 禁止把这些数据写入飞牛原始数据库。
@@ -604,6 +605,18 @@ BAOTA_DEPLOY.md
 ```
 
 是否允许未登录访问 `/api/system/database-status` 需要谨慎，默认应要求登录。
+
+登录系统必须保留。可以通过系统设置配置访问策略，但默认必须安全：
+
+```text
+local_auth_required=true
+remote_access_policy=login
+TRUST_PROXY_HEADERS=false
+```
+
+允许本地访问在 `local_auth_required=false` 时免登录，外部访问只能默认需要登录或设置为禁止访问。不要提供外部免登录 UI，不要把所有接口改成公开无鉴权。
+
+本地来源包括 `127.0.0.1`、`::1`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`fc00::/7`、`fe80::/10`。默认不信任 `X-Forwarded-For` / `X-Real-IP`；只有 `TRUST_PROXY_HEADERS=true` 时才允许使用代理头判断真实来源。
 
 ---
 

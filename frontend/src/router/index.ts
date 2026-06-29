@@ -28,14 +28,20 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  if (to.name === 'login') {
+    await auth.ensureReady()
+    if (auth.isAuthenticated) return { path: '/dashboard' }
+    return true
+  }
   if (to.meta.public) return true
-  if (!auth.isAuthenticated) return { path: '/login', query: { redirect: to.fullPath } }
-  if (!auth.user) {
-    try {
-      await auth.loadMe()
-    } catch {
-      await auth.logout()
-      return { path: '/login', query: { redirect: to.fullPath } }
+  const allowed = await auth.ensureReady()
+  if (!allowed) {
+    return {
+      path: '/login',
+      query: {
+        redirect: to.fullPath,
+        forbidden: auth.accessDeniedMessage ? '1' : undefined
+      }
     }
   }
   return true

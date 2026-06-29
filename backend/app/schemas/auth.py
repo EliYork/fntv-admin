@@ -19,15 +19,19 @@ class ChangePasswordRequest(BaseModel):
 
 
 class AdminUserOut(BaseModel):
-    id: int
+    id: int | None
     username: str
     role: str
     created_at: int
     last_login_at: int | None = None
+    is_admin: bool = True
+    auth_mode: str = "jwt"
+    is_local_request: bool = False
+    local_auth_required: bool = True
+    remote_access_policy: str = "login"
 
 
 class TokenOut(BaseModel):
     token: str
     token_type: str = "bearer"
     user: AdminUserOut
-

@@ -188,6 +188,8 @@ def default_settings(db: Session) -> dict[str, Any]:
             "default_page_size": str(settings.default_page_size),
             "log_retention_days": str(settings.log_retention_days),
             "theme": "system",
+            "local_auth_required": "true",
+            "remote_access_policy": "login",
         }
         for key, value in defaults.items():
             db.merge(Setting(key=key, value=value, value_type="string", updated_at=now))

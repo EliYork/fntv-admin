@@ -7,6 +7,8 @@ export const apiClient = axios.create({
   timeout: 15000
 })
 
+let redirectingToLogin = false
+
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('fntv_admin_token')
   if (token) {
@@ -18,10 +20,14 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (axios.isCancel(error)) {
+      return Promise.reject(error)
+    }
     const message = error.response?.data?.error?.message || '请求失败'
     if (error.response?.status === 401) {
       localStorage.removeItem('fntv_admin_token')
-      if (window.location.pathname !== '/login') {
+      if (!redirectingToLogin && window.location.pathname !== '/login') {
+        redirectingToLogin = true
         const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`
         window.location.assign(`/login?redirect=${encodeURIComponent(redirect)}`)
       }
