@@ -579,6 +579,7 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
     fields = schema.plays.fields
     joined_items = False
     joined_users = False
+    joined_item_parents = False
 
     def ensure_item_join() -> None:
         nonlocal joined_items
@@ -593,6 +594,18 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
             return
         joins.append(f"LEFT JOIN {quote_identifier(schema.users.table)} u ON p.{quote_identifier(fields['user_guid'])} = u.{quote_identifier(schema.users.fields['guid'])}")
         joined_users = True
+
+    def ensure_item_parent_joins() -> None:
+        nonlocal joined_item_parents
+        ensure_item_join()
+        parent_col = schema.items.fields.get("parent_guid")
+        guid_col = schema.items.fields.get("guid")
+        if joined_item_parents or not joined_items or not schema.items.table or not parent_col or not guid_col:
+            return
+        item_table = quote_identifier(schema.items.table)
+        joins.append(f"LEFT JOIN {item_table} ip ON i.{quote_identifier(parent_col)} = ip.{quote_identifier(guid_col)}")
+        joins.append(f"LEFT JOIN {item_table} igp ON ip.{quote_identifier(parent_col)} = igp.{quote_identifier(guid_col)}")
+        joined_item_parents = True
 
     visible = _visible_clause(schema, "p")
     if visible:
@@ -645,10 +658,12 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
         ]
         title_columns = [col for col in dict.fromkeys(title_columns) if col]
         if title_columns:
-            ensure_item_join()
+            ensure_item_parent_joins()
             if joined_items:
-                keyword_where.extend(f"i.{quote_identifier(col)} LIKE ?" for col in title_columns)
-                params.extend([f"%{keyword}%"] * len(title_columns))
+                item_aliases = ["i", "ip", "igp"] if joined_item_parents else ["i"]
+                for alias in item_aliases:
+                    keyword_where.extend(f"{alias}.{quote_identifier(col)} LIKE ?" for col in title_columns)
+                    params.extend([f"%{keyword}%"] * len(title_columns))
         user_columns = [
             schema.users.fields.get("username"),
             _find_column(schema, schema.users.table, ("nickname", "name", "display_name")),

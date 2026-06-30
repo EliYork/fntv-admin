@@ -185,6 +185,28 @@ def test_media_stream_duration_does_not_use_item_runtime_minutes_heuristic(conn:
     assert rows[0]["progress"] == "00:00:10 / 00:00:44"
 
 
+def test_history_keyword_search_matches_parent_series_title(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.executemany(
+        'INSERT INTO item (guid, title, type, parent_guid, season_number, episode_number) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+            ("series-3", "漫长的季节", "Series", None, None, None),
+            ("season-3", "第一季", "Season", "series-3", 1, None),
+            ("episode-3", "第 01 集", "Episode", "season-3", 1, 1),
+        ],
+    )
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, ts, visible) VALUES (?, ?, ?, ?, ?, ?)',
+        ("u1", "episode-3", now, now, 30, 1),
+    )
+    schema = adapter.detect_schema(conn=conn)
+    raw_rows, total = adapter._play_rows(conn, schema, 1, 20, {"keyword": "漫长的季节"})
+    assert total == 1
+    rows = adapter._hydrate_play_rows(conn, schema, raw_rows)
+    assert rows[0]["display_title"].startswith("漫长的季节")
+
+
 def main() -> None:
     for test in (
         test_today_plays_normalizes_millisecond_timestamps,
@@ -196,6 +218,7 @@ def main() -> None:
         test_runtime_normalization_treats_small_item_runtime_as_minutes,
         test_play_rows_prefer_batched_media_stream_duration,
         test_media_stream_duration_does_not_use_item_runtime_minutes_heuristic,
+        test_history_keyword_search_matches_parent_series_title,
     ):
         conn = _connect()
         try:

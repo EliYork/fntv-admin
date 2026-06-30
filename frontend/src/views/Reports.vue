@@ -155,9 +155,9 @@
         </div>
         <div v-if="topMedia.loading && topMedia.hasLoaded" class="inline-updating">正在更新...</div>
         <div v-if="topMedia.error" :class="topMedia.hasLoaded ? 'inline-warning' : 'inline-error'">{{ topMedia.error }}</div>
-        <template>
+        <div class="report-content-stack">
           <div class="panel-note">{{ topMediaMode === 'series' ? '按剧级别合并单集播放记录；没有父级的媒体按自身统计。' : '按单条媒体或单集播放记录统计。' }}</div>
-          <el-table v-if="topMedia.items.length" :data="topMedia.items">
+          <el-table v-if="hasListItems(topMedia)" :data="topMedia.items">
             <el-table-column label="媒体" min-width="260">
               <template #default="{ row }">
                 <span>{{ row.title || row.item_guid || '-' }}</span>
@@ -169,8 +169,8 @@
             <el-table-column prop="watched_count" label="看完" width="100" />
             <el-table-column prop="last_played_at" label="最近播放" min-width="160" />
           </el-table>
-          <EmptyState v-else-if="!topMedia.loading" description="暂无热门媒体数据" />
-        </template>
+          <EmptyState v-else-if="showListEmpty(topMedia)" description="暂无热门媒体数据" />
+        </div>
       </div>
     </div>
 
@@ -182,8 +182,8 @@
       <div class="panel-body" v-loading="initialLoading(resolutions)">
         <div v-if="resolutions.loading && resolutions.hasLoaded" class="inline-updating">正在更新...</div>
         <div v-if="resolutions.error" :class="resolutions.hasLoaded ? 'inline-warning' : 'inline-error'">{{ resolutions.error }}</div>
-        <template>
-          <template v-if="resolutions.items.length">
+        <div class="report-content-stack">
+          <div v-if="hasListItems(resolutions)">
             <div v-for="row in resolutions.items" :key="row.resolution" class="distribution-row">
               <span class="distribution-name" :class="{ muted: row.resolution === '未记录' }">{{ row.resolution || '未记录' }}</span>
               <div class="bar-track">
@@ -191,10 +191,10 @@
               </div>
               <span class="distribution-count">{{ row.play_count }}</span>
             </div>
-          </template>
-          <EmptyState v-else-if="!resolutions.loading" description="暂无分辨率数据" />
+          </div>
+          <EmptyState v-else-if="showListEmpty(resolutions)" description="暂无分辨率数据" />
           <div class="panel-note">飞牛播放记录中没有记录分辨率时会归入“未记录”。</div>
-        </template>
+        </div>
       </div>
     </div>
   </section>
@@ -347,6 +347,9 @@ async function loadList<T>(state: ListState<T>, loader: () => Promise<T[]>) {
   try {
     const items = await loader()
     if (state.requestId !== requestId) return
+    if (!Array.isArray(items)) {
+      throw new Error('报表接口返回格式异常')
+    }
     state.items = items
     state.hasLoaded = true
     state.lastUpdatedAt = Date.now()
@@ -356,6 +359,14 @@ async function loadList<T>(state: ListState<T>, loader: () => Promise<T[]>) {
   } finally {
     if (state.requestId === requestId) state.loading = false
   }
+}
+
+function hasListItems<T>(state: ListState<T>): boolean {
+  return Array.isArray(state.items) && state.items.length > 0
+}
+
+function showListEmpty<T>(state: ListState<T>): boolean {
+  return !state.loading && Array.isArray(state.items) && state.items.length === 0
 }
 
 function trendDays(): number | string {
@@ -565,6 +576,15 @@ useRouteRefresh(loadAll)
   color: var(--app-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.report-content-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.report-content-stack .panel-note {
+  margin-bottom: 0;
 }
 
 .panel-state,
