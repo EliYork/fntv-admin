@@ -19,13 +19,22 @@ export function getStoredThemeMode(): ThemeMode {
   return normalizeThemeMode(localStorage.getItem(STORAGE_KEY))
 }
 
+function syncThemeDom(mode: ThemeMode, resolved: ResolvedTheme): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.dataset.theme = resolved
+  document.documentElement.dataset.themeMode = mode
+  if (resolved === 'dark') {
+    document.documentElement.classList.add('dark')
+    document.body.classList.add('dark')
+    return
+  }
+  document.documentElement.classList.remove('dark')
+  document.body.classList.remove('dark')
+}
+
 export function applyThemeMode(mode: ThemeMode): ResolvedTheme {
   const resolved = mode === 'system' ? getSystemTheme() : mode
-  if (typeof document !== 'undefined') {
-    document.documentElement.dataset.theme = resolved
-    document.documentElement.dataset.themeMode = mode
-    document.documentElement.classList.toggle('dark', resolved === 'dark')
-  }
+  syncThemeDom(mode, resolved)
   return resolved
 }
 
