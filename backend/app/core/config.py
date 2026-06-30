@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     log_retention_days: int = 14
     access_token_expire_minutes: int = 60 * 24
     trust_proxy_headers: bool = False
+    snapshot_enabled: bool = False
+    active_watch_window_seconds: int = 300
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

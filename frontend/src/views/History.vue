@@ -12,6 +12,12 @@
     </div>
     <div class="toolbar">
       <el-input v-model="keyword" placeholder="搜索标题或用户" style="width: 260px" clearable @clear="applyFilters" @keyup.enter="applyFilters" />
+      <el-select v-model="range" placeholder="时间范围" style="width: 150px" @change="applyFilters">
+        <el-option label="今天" value="today" />
+        <el-option label="最近 7 天" value="7d" />
+        <el-option label="最近 30 天" value="30d" />
+        <el-option label="全部" value="all" />
+      </el-select>
       <el-button :icon="Search" type="primary" :loading="loading" @click="applyFilters">筛选</el-button>
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
@@ -60,6 +66,7 @@ import PaginationFooter from '../components/PaginationFooter.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
 const keyword = ref('')
+const range = ref<'today' | '7d' | '30d' | 'all'>('all')
 const page = ref(1)
 const pageSize = ref(20)
 const pageData = ref<PageData<HistoryItem> | null>(null)
@@ -69,7 +76,7 @@ const exporting = ref(false)
 async function loadData() {
   loading.value = true
   try {
-    pageData.value = await fetchHistory({ page: page.value, page_size: pageSize.value, keyword: keyword.value })
+    pageData.value = await fetchHistory({ page: page.value, page_size: pageSize.value, keyword: keyword.value, range: range.value })
     page.value = pageData.value.page
     pageSize.value = pageData.value.page_size
   } finally {
@@ -96,7 +103,7 @@ async function handlePageSizeChange(value: number) {
 async function exportCsv() {
   exporting.value = true
   try {
-    const blob = await downloadHistoryCsv({ keyword: keyword.value })
+    const blob = await downloadHistoryCsv({ keyword: keyword.value, range: range.value })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

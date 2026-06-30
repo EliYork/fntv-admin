@@ -19,6 +19,11 @@ def recent_activities(limit: int = Query(default=20, ge=1, le=30)):
     return ok(fntv_adapter.recent_activities(limit=limit))
 
 
+@router.get("/active-watches")
+def active_watches(window_seconds: int = Query(default=300, ge=60, le=3600)):
+    return ok(fntv_adapter.active_watches(window_seconds=window_seconds))
+
+
 @router.get("/play-trend")
 def play_trend():
     return ok(fntv_adapter.play_trend())

@@ -23,6 +23,7 @@ def list_history(
     progress_max: int | None = None,
     start_time: str | None = None,
     end_time: str | None = None,
+    range: str | None = None,  # noqa: A002
     sort_by: str | None = None,
     sort_order: str | None = None,
 ):
@@ -36,6 +37,7 @@ def list_history(
         "progress_max": progress_max,
         "start_time": start_time,
         "end_time": end_time,
+        "range": range,
         "sort_by": sort_by,
         "sort_order": sort_order,
     }
@@ -53,6 +55,7 @@ def export_history(
     progress_max: int | None = None,
     start_time: str | None = None,
     end_time: str | None = None,
+    range: str | None = None,  # noqa: A002
 ):
     filters = {
         "user_guid": user_guid,
@@ -64,6 +67,7 @@ def export_history(
         "progress_max": progress_max,
         "start_time": start_time,
         "end_time": end_time,
+        "range": range,
     }
     csv_text = fntv_adapter.history_csv(filters)
     return Response(

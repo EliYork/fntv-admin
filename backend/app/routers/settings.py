@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_admin
 from app.core.response import ok
 from app.db.admin_db import get_session
-from app.schemas.settings import AuthPolicyUpdate
+from app.schemas.settings import AuthPolicyUpdate, SnapshotSettingUpdate
 from app.services import auth_policy_service
-from app.services.system_service import default_settings
+from app.services.system_service import default_settings, save_snapshot_setting
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(get_current_admin)])
 
@@ -26,6 +26,11 @@ def update_settings():
 @router.get("/database")
 def database_settings():
     return ok({})
+
+
+@router.put("/database")
+def update_database_settings(payload: SnapshotSettingUpdate, db: Session = Depends(get_session)):
+    return ok(save_snapshot_setting(db, payload.snapshot_enabled))
 
 
 @router.get("/theme")

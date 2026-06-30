@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.errors import AppError
+from app.db.fntv_snapshot import open_active_fntv_connection
 
 WRITE_KEYWORDS = ("insert", "update", "delete", "drop", "alter", "vacuum", "reindex", "create")
 
@@ -16,16 +17,7 @@ def _readonly_uri(path: Path) -> str:
 
 
 def open_fntv_connection() -> sqlite3.Connection:
-    path = settings.fntv_db_path
-    if not path.exists():
-        raise AppError("FNTV_DATABASE_NOT_FOUND", "飞牛影视数据库不存在，请检查 Docker Compose 只读挂载路径", 503)
-    try:
-        conn = sqlite3.connect(_readonly_uri(path), uri=True)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA query_only = ON")
-        return conn
-    except sqlite3.Error as exc:
-        raise AppError("FNTV_DATABASE_OPEN_FAILED", "飞牛影视数据库只读打开失败", 503) from exc
+    return open_active_fntv_connection()
 
 
 def reject_write_sql(sql: str) -> None:

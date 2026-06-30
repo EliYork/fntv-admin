@@ -124,7 +124,7 @@ CREATE
 
 代码层必须使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON`，并通过 `scripts/verify_fntv_readonly.py` 验证不写飞牛数据库。
 
-V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成飞牛数据库 snapshot 快照，不在启动、状态检查或业务 API 中复制源库。状态判断只分为源库只读可用和源库不可用。
+默认直接只读读取 `/fntv/trimmedia.db`。Phase 7C 允许可选 SQLite 快照读取，但默认关闭；快照只能写入 `/data/cache/trimmedia.snapshot.db`，源库连接仍必须 `mode=ro` + `PRAGMA query_only = ON`。快照失败必须自动 fallback 到源库只读直连，不允许导致页面白屏或容器重启。
 
 ---
 
@@ -147,6 +147,7 @@ V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成飞牛数据库 snap
 报表缓存
 API Token
 本地/外部访问认证策略
+可选快照开关
 ```
 
 禁止把这些数据写入飞牛原始数据库。
@@ -1029,6 +1030,7 @@ Phase 1：
 - 前端提供登录页占位和后台布局占位
 - 前端页面包括：仪表盘、观看历史、用户管理、媒体库、报表中心、系统设置
 - 系统诊断页包括：飞牛数据库状态、schema 诊断、只读状态、复制诊断信息
+- Phase 7C 可增加：快照状态、播放时段分布、最近活跃观看推断、收藏记录只读列表、下载记录只读诊断、watched 字段诊断
 - 不实现复杂业务查询
 - 不实现复杂图表
 - 不写入飞牛数据库

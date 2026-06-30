@@ -19,6 +19,11 @@ def play_trend(days: str = Query(default="30")):
     return ok(report_service.play_trend(days=days))
 
 
+@router.get("/hourly-distribution")
+def hourly_distribution(days: str = Query(default="30")):
+    return ok(report_service.hourly_distribution(days=days))
+
+
 @router.get("/top-users")
 def top_users(days: str = Query(default="30"), limit: int = Query(default=10, ge=1)):
     return ok(report_service.top_users(days=days, limit=limit))

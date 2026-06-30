@@ -12,12 +12,16 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.fntv_readonly import open_fntv_connection
 from app.db.fntv_snapshot import (
+    refresh_fntv_snapshot,
+    resolve_active_fntv_database,
     set_active_database,
+    snapshot_enabled,
     snapshot_status,
 )
 from app.db.migrations import run_migrations
 from app.db.schema_check import schema_diagnostics
 from app.models import Setting
+from app.services import fntv_schema_adapter
 from app.utils.time import now_ts
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,8 @@ def storage_status() -> dict[str, Any]:
 
 def database_status(detail: bool = False) -> dict[str, Any]:
     snap_info = snapshot_status()
+    active_info = resolve_active_fntv_database()
+    snap_info = {**snap_info, **active_info}
     fntv: dict[str, Any] = {
         "path": snap_info["source_path_container"],
         "exists": snap_info["source_exists"],
@@ -60,14 +66,14 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "source_exists": snap_info["source_exists"],
         "source_readable": snap_info["source_readable"],
         "source_readonly_configured": snap_info["source_readonly_configured"],
-        "snapshot_enabled": False,
+        "snapshot_enabled": snap_info["snapshot_enabled"],
         "snapshot_path_container": snap_info["snapshot_path_container"],
         "snapshot_exists": snap_info["snapshot_exists"],
         "snapshot_dir_exists": snap_info["snapshot_dir_exists"],
         "snapshot_dir_writable": snap_info["snapshot_dir_writable"],
         "snapshot_tmp_path": snap_info["snapshot_tmp_path"],
         "snapshot_last_refresh_at": snap_info["snapshot_last_refresh_at"],
-        "snapshot_ok": None,
+        "snapshot_ok": snap_info["snapshot_ok"],
         "snapshot_error": snap_info["snapshot_error"],
         "snapshot_error_type": snap_info["snapshot_error_type"],
         "snapshot_error_message": snap_info["snapshot_error_message"],
@@ -80,11 +86,11 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "source_direct_error_type": None,
         "source_direct_error_message": None,
         "source_test_query": "sqlite_master",
-        "active_database": "none",
+        "active_database": snap_info.get("active_database", "none"),
         "active_db_path": None,
         "availability": "unavailable",
         "degraded": False,
-        "fallback_to_source": False,
+        "fallback_to_source": snap_info.get("fallback_to_source", False),
         "detected_table_count": 0,
         "detected_tables": [],
         "detected_columns_by_table": {},
@@ -103,19 +109,35 @@ def database_status(detail: bool = False) -> dict[str, Any]:
     try:
         with open_fntv_connection() as conn:
             conn.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1").fetchone()
-            set_active_database("source")
+            active_info = resolve_active_fntv_database()
+            active_database = active_info.get("active_database")
+            if active_database not in {"source", "snapshot"}:
+                active_database = "source"
+                active_info = {**active_info, "active_database": "source", "active_db_path": snap_info["source_path_container"], "fallback_to_source": False}
+            set_active_database(active_database)
             fntv.update(
                 {
                     "source_direct_ok": True,
                     "source_direct_error_type": None,
                     "source_direct_error_message": None,
-                    "active_database": "source",
-                    "active_db_path": snap_info["source_path_container"],
+                    "active_database": active_database,
+                    "active_db_path": active_info.get("active_db_path") or snap_info["source_path_container"],
                     "availability": "available",
+                    "degraded": active_info.get("degraded", False),
+                    "fallback_to_source": active_info.get("fallback_to_source", False),
+                    "snapshot_enabled": active_info.get("snapshot_enabled", snap_info["snapshot_enabled"]),
+                    "snapshot_ok": active_info.get("snapshot_ok", snap_info["snapshot_ok"]),
+                    "snapshot_error": active_info.get("snapshot_error", snap_info["snapshot_error"]),
+                    "snapshot_error_type": active_info.get("snapshot_error_type", snap_info["snapshot_error_type"]),
+                    "snapshot_error_message": active_info.get("snapshot_error_message", snap_info["snapshot_error_message"]),
                 }
             )
             diag = schema_diagnostics(conn=conn, detail=detail)
+            watched_diag = fntv_schema_adapter.watched_field_diagnostics(conn=conn)
         fntv.update(diag)
+        fntv["watched_diagnostics"] = watched_diag
+        fntv["capabilities"]["can_read_favorites"] = "item_user_favorite" in set(fntv.get("detected_tables") or [])
+        fntv["capabilities"]["can_read_downloads"] = "download_task" in set(fntv.get("detected_tables") or [])
         fntv["ok"] = bool(diag.get("ok"))
         if fntv["ok"]:
             fntv["error"] = None
@@ -150,6 +172,12 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "ok": settings.admin_db_path.exists(),
     }
     return {"fntv": fntv, "admin": admin}
+
+
+def refresh_snapshot() -> dict[str, Any]:
+    result = refresh_fntv_snapshot()
+    result["status"] = snapshot_status()
+    return result
 
 
 def _source_direct_error(exc: Exception) -> tuple[str, str]:
@@ -190,12 +218,20 @@ def default_settings(db: Session) -> dict[str, Any]:
             "theme": "system",
             "local_auth_required": "true",
             "remote_access_policy": "login",
+            "snapshot_enabled": "true" if snapshot_enabled() else "false",
         }
         for key, value in defaults.items():
             db.merge(Setting(key=key, value=value, value_type="string", updated_at=now))
         db.commit()
         return defaults
     return result
+
+
+def save_snapshot_setting(db: Session, enabled: bool) -> dict[str, Any]:
+    now = now_ts()
+    db.merge(Setting(key="snapshot_enabled", value="true" if enabled else "false", value_type="bool", updated_at=now))
+    db.commit()
+    return {"snapshot_enabled": enabled}
 
 
 def ensure_path_is_under_data(path: Path) -> bool:

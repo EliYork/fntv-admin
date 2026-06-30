@@ -17,6 +17,21 @@
       </div>
     </div>
 
+    <div class="table-panel section">
+      <div class="panel-title panel-title-row">
+        <span>最近活跃观看</span>
+        <span class="panel-note">根据最近 5 分钟播放记录推断，非实时会话。</span>
+      </div>
+      <el-table v-if="activeWatches.length" v-loading="loading" :data="activeWatches">
+        <el-table-column prop="username" label="用户" min-width="150" />
+        <el-table-column prop="display_title" label="媒体" min-width="260" />
+        <el-table-column prop="last_updated_at" label="最近更新" min-width="160" />
+        <el-table-column prop="progress" label="进度" width="130" />
+        <el-table-column prop="resolution" label="分辨率" width="110" />
+      </el-table>
+      <EmptyState v-else description="暂无最近活跃观看" />
+    </div>
+
     <div class="table-panel">
       <div class="panel-title panel-title-row">
         <span>最近 20 条活动</span>
@@ -47,13 +62,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, Refresh } from '@element-plus/icons-vue'
-import { fetchDashboardOverview, fetchRecentActivities, type DashboardOverview, type HistoryItem } from '../api/modules'
+import { fetchActiveWatches, fetchDashboardOverview, fetchRecentActivities, type ActiveWatchItem, type DashboardOverview, type HistoryItem } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
 const router = useRouter()
 const overview = ref<DashboardOverview | null>(null)
 const activities = ref<HistoryItem[]>([])
+const activeWatches = ref<ActiveWatchItem[]>([])
 const loading = ref(false)
 
 const metrics = computed(() => [
@@ -67,7 +83,9 @@ async function loadData() {
   loading.value = true
   try {
     overview.value = await fetchDashboardOverview()
-    activities.value = await fetchRecentActivities(20)
+    const [active, recent] = await Promise.all([fetchActiveWatches(300), fetchRecentActivities(20)])
+    activeWatches.value = active
+    activities.value = recent
   } finally {
     loading.value = false
   }
@@ -83,5 +101,11 @@ useRouteRefresh(loadData)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panel-note {
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 </style>

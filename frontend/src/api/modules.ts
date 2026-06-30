@@ -19,6 +19,7 @@ export interface HistoryItem {
   item_guid: string
   title: string
   display_title: string
+  started_at?: string | null
   played_at?: string | null
   position_seconds?: number | null
   runtime_seconds?: number | null
@@ -27,6 +28,12 @@ export interface HistoryItem {
   watched: boolean
   watched_text: string
   resolution?: string | null
+}
+
+export interface ActiveWatchItem extends HistoryItem {
+  last_updated_at?: string | null
+  window_seconds: number
+  inference_note: string
 }
 
 export interface UserItem {
@@ -83,6 +90,12 @@ export interface PlayTrendItem {
   active_user_count: number
 }
 
+export interface HourlyDistributionItem {
+  hour: number
+  label: string
+  play_count: number
+}
+
 export interface TopUserReportItem {
   user_guid: string
   username: string
@@ -112,12 +125,37 @@ export interface ResolutionDistributionItem {
   play_count: number
 }
 
+export interface FavoriteItem {
+  user_guid: string
+  item_guid: string
+  username: string
+  title: string
+  media_type: string
+  favorite_time: string
+}
+
+export interface DownloadItem {
+  user_guid: string
+  username: string
+  media_file: string
+  output_file: string
+  resolution: string
+  status: string | number
+  status_text: string
+  create_time: string
+  update_time: string
+}
+
 export function fetchDashboardOverview() {
   return getApi<DashboardOverview>('/dashboard/overview')
 }
 
 export function fetchRecentActivities(limit = 20) {
   return getApi<HistoryItem[]>('/dashboard/recent-activities', { limit })
+}
+
+export function fetchActiveWatches(windowSeconds = 300) {
+  return getApi<ActiveWatchItem[]>('/dashboard/active-watches', { window_seconds: windowSeconds })
 }
 
 export function fetchHistory(params: Record<string, unknown>) {
@@ -161,6 +199,10 @@ export function fetchReportPlayTrend(days: number | string = 30) {
   return getApi<PlayTrendItem[]>('/reports/play-trend', { days }, { suppressGlobalError: true })
 }
 
+export function fetchReportHourlyDistribution(days: number | string = 30) {
+  return getApi<HourlyDistributionItem[]>('/reports/hourly-distribution', { days }, { suppressGlobalError: true })
+}
+
 export function fetchReportTopUsers(params: { days: string; limit: number }) {
   return getApi<TopUserReportItem[]>('/reports/top-users', params, { suppressGlobalError: true })
 }
@@ -175,6 +217,14 @@ export function fetchReportMediaTypeDistribution() {
 
 export function fetchReportResolutionDistribution(days: string) {
   return getApi<ResolutionDistributionItem[]>('/reports/resolution-distribution', { days }, { suppressGlobalError: true })
+}
+
+export function fetchFavorites(params: Record<string, unknown>) {
+  return getApi<PageData<FavoriteItem> & { capability: boolean }>('/favorites', params, { suppressGlobalError: true })
+}
+
+export function fetchDownloads(params: Record<string, unknown>) {
+  return getApi<PageData<DownloadItem> & { capability: boolean }>('/downloads', params, { suppressGlobalError: true })
 }
 
 export interface LogItem {

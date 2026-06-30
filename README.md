@@ -52,6 +52,8 @@ services:
       DEFAULT_PAGE_SIZE: "20"
       LOG_RETENTION_DAYS: "14"
       TRUST_PROXY_HEADERS: "false"
+      SNAPSHOT_ENABLED: "false"
+      ACTIVE_WATCH_WINDOW_SECONDS: "300"
 ```
 
 3. 检查挂载路径：
@@ -161,11 +163,13 @@ ghcr.io/eliyork/fntv-admin:<tag>
 
 `/data` 必须读写挂载，否则 `admin.db`、日志和缓存无法持久化。飞牛数据库的安全边界由应用代码层保证：后端通过 SQLite URI `mode=ro` 打开飞牛数据库，并在连接上设置 `PRAGMA query_only = ON`。业务代码不提供任何飞牛数据库写入接口，`python scripts/verify_fntv_readonly.py` 必须通过。
 
-## 飞牛源库直读
+## 飞牛源库直读与可选快照
 
-V1 默认直接只读读取 `/fntv/trimmedia.db`，不生成 snapshot 快照。后端使用 SQLite URI `mode=ro` 打开源库，并设置 `PRAGMA query_only = ON`。即使飞牛 Docker UI 中显示数据库目录不是只读挂载，代码层仍会拒绝写入飞牛数据库。
+默认直接只读读取 `/fntv/trimmedia.db`。后端使用 SQLite URI `mode=ro` 打开源库，并设置 `PRAGMA query_only = ON`。即使飞牛 Docker UI 中显示数据库目录不是只读挂载，代码层仍会拒绝写入飞牛数据库。
 
-未来如果需要 snapshot，可作为 V2 性能或兼容性优化另行实现；V1 不需要配置任何 snapshot 相关环境变量。
+Phase 7C 增加可选快照读取。默认 `SNAPSHOT_ENABLED=false`，系统仍走源库只读直连。开启后，后端会尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`，业务查询优先读取快照；如果快照生成或打开失败，会自动回退源库只读直连，系统诊断页显示失败原因和 `fallback_to_source`。
+
+快照只写入 `/data/cache`，不复制 `.wal/.shm` 作为主要方案，不写飞牛影视数据库，不改变 `/fntv` 挂载语义。
 
 ## 开发者本地构建
 
@@ -196,6 +200,9 @@ docker compose -f docker-compose.build.yml up -d
 - 媒体库优化剧集/季/单集标题展示，避免重复拼接；隐藏操作写入 `admin.db`。
 - Phase 7B 报表中心基础统计：总览、播放趋势 GitHub-style 日期热力图、活跃用户榜、热门媒体榜单集/整部剧统计模式、媒体类型中文展示、分辨率“未记录”说明。
 - 报表中心切换范围或刷新时保留上次成功数据，后台更新失败只显示模块内提示，不弹出误导性的登录错误。
+- Phase 7C 增加播放时段分布、收藏记录只读列表、下载记录只读诊断、最近活跃观看推断、观看历史时间范围筛选和增强 CSV 导出。
+- 最近活跃观看使用最近 5 分钟播放记录更新时间推断，不是真正实时 session。
+- 系统诊断显示快照状态、新增表能力和 `watched` 字段取值诊断；诊断不返回真实播放记录行。
 - 系统设置支持主题、本地访问认证策略和外部访问认证策略；系统诊断页提供飞牛数据库状态、schema 诊断、只读状态和右上角复制诊断信息。
 
 飞牛数据库表结构不确定时，页面会显示空状态或数据库异常提示，不会导致应用崩溃。

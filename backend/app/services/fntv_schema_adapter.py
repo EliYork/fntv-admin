@@ -252,16 +252,20 @@ def top_users() -> list[dict[str, Any]]:
     return []
 
 
-def history_page(page: int, page_size: int, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+def history_page(page: int, page_size: int, filters: dict[str, Any] | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     filters = filters or {}
     try:
-        schema = detect_schema()
+        schema = detect_schema(conn=conn) if conn is not None else detect_schema()
         if not schema.plays.table:
             return _empty_page(page, page_size, capabilities=schema.capabilities)
         page_num, clean_page_size, _ = normalize_page(page, page_size)
-        with open_fntv_connection() as conn:
+        if conn is not None:
             rows, total = _play_rows(conn, schema, page_num, clean_page_size, filters)
             items = _hydrate_play_rows(conn, schema, rows)
+        else:
+            with open_fntv_connection() as active_conn:
+                rows, total = _play_rows(active_conn, schema, page_num, clean_page_size, filters)
+                items = _hydrate_play_rows(active_conn, schema, rows)
         pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
         return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capabilities": schema.capabilities}
     except AppError as exc:
@@ -291,10 +295,26 @@ def history_detail(record_id: str) -> dict[str, Any] | None:
         return None
 
 
-def history_csv(filters: dict[str, Any] | None = None) -> str:
-    page_data = history_page(1, 1000, filters)
+def history_csv(filters: dict[str, Any] | None = None, conn: sqlite3.Connection | None = None) -> str:
+    page_data = history_page(1, 1000, filters, conn=conn)
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=["id", "username", "display_title", "played_at", "progress", "watched", "resolution"])
+    writer = csv.DictWriter(
+        output,
+        fieldnames=[
+            "id",
+            "username",
+            "display_title",
+            "started_at",
+            "played_at",
+            "position",
+            "runtime",
+            "progress_percent",
+            "watched",
+            "resolution",
+            "item_guid",
+            "user_guid",
+        ],
+    )
     writer.writeheader()
     for item in page_data["items"]:
         writer.writerow(
@@ -302,10 +322,15 @@ def history_csv(filters: dict[str, Any] | None = None) -> str:
                 "id": item.get("id", ""),
                 "username": item.get("username", ""),
                 "display_title": item.get("display_title", ""),
+                "started_at": item.get("started_at", ""),
                 "played_at": item.get("played_at", ""),
-                "progress": item.get("progress", ""),
+                "position": format_duration(item.get("position_seconds")) if item.get("position_seconds") is not None else "",
+                "runtime": format_duration(item.get("runtime_seconds")) if item.get("runtime_seconds") is not None else "",
+                "progress_percent": item.get("progress_percent", ""),
                 "watched": item.get("watched_text", ""),
                 "resolution": item.get("resolution", ""),
+                "item_guid": item.get("item_guid", ""),
+                "user_guid": item.get("user_guid", ""),
             }
         )
     return output.getvalue()
@@ -428,9 +453,210 @@ def media_stats(guid: str) -> dict[str, Any]:
         return _empty_media_stats(guid)
 
 
+def active_watches(window_seconds: int = 300, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+    try:
+        schema = detect_schema(conn=conn) if conn is not None else detect_schema()
+        if not schema.plays.table:
+            return []
+        active_conn: sqlite3.Connection
+        if conn is not None:
+            active_conn = conn
+            close_after = False
+        else:
+            active_conn = open_fntv_connection()
+            close_after = True
+        try:
+            update_expr = _recent_update_time_expr(schema, "p")
+            if not update_expr:
+                return []
+            seconds_expr = _timestamp_seconds_expr(update_expr)
+            where = [f"{seconds_expr} >= ?"]
+            params: list[Any] = [int(datetime.now().timestamp()) - max(1, int(window_seconds))]
+            visible = _visible_clause(schema, "p")
+            if visible:
+                where.append(visible)
+            rows = active_conn.execute(
+                f"SELECT p.*, p.rowid AS __rowid FROM {quote_identifier(schema.plays.table)} p "
+                f"WHERE {' AND '.join(where)} ORDER BY {seconds_expr} DESC LIMIT 20",
+                params,
+            ).fetchall()
+            items = _hydrate_play_rows(active_conn, schema, [dict(row) for row in rows])
+            for item, raw in zip(items, rows, strict=False):
+                item["last_updated_at"] = normalize_timestamp(_recent_update_value(dict(raw), schema)) or item.get("played_at") or ""
+                item["window_seconds"] = max(1, int(window_seconds))
+                item["inference_note"] = f"根据最近 {max(1, int(window_seconds)) // 60} 分钟播放记录推断，非实时会话。"
+            return items
+        finally:
+            if close_after:
+                active_conn.close()
+    except (AppError, sqlite3.Error, ValueError):
+        return []
+
+
+def favorites_page(page: int, page_size: int, keyword: str | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    try:
+        schema = detect_schema(conn=conn) if conn is not None else detect_schema()
+        if not _has_table(schema, "item_user_favorite"):
+            return _empty_optional_page(page, page_size, capability=False)
+        active_conn, close_after = _active_conn(conn)
+        try:
+            page_num, clean_page_size, offset = normalize_page(page, page_size)
+            where, params = _favorite_where(schema, keyword)
+            where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+            joins = _favorite_joins(schema)
+            count = active_conn.execute(f"SELECT COUNT(*) AS total FROM item_user_favorite f {joins}{where_sql}", params).fetchone()
+            rows = active_conn.execute(
+                f"""
+                SELECT
+                    f.user_guid,
+                    f.item_guid,
+                    f.create_time,
+                    u.username,
+                    i.title,
+                    i.original_title,
+                    i.filename,
+                    i.type
+                FROM item_user_favorite f
+                {joins}
+                {where_sql}
+                ORDER BY f.create_time DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*params, clean_page_size, offset),
+            ).fetchall()
+            items = [
+                {
+                    "user_guid": str(row["user_guid"] or ""),
+                    "item_guid": str(row["item_guid"] or ""),
+                    "username": str(row["username"] or row["user_guid"] or ""),
+                    "title": _clean_display_text(row["title"]) or _clean_display_text(row["original_title"]) or _basename_from_path(row["filename"]) or str(row["item_guid"] or ""),
+                    "media_type": str(row["type"] or ""),
+                    "favorite_time": normalize_timestamp(row["create_time"]) or "",
+                }
+                for row in rows
+            ]
+            total = int(count["total"] or 0) if count else 0
+            pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
+            return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capability": True}
+        finally:
+            if close_after:
+                active_conn.close()
+    except (AppError, sqlite3.Error):
+        return _empty_optional_page(page, page_size, capability=False)
+
+
+def downloads_page(page: int, page_size: int, keyword: str | None = None, status: str | None = None, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    try:
+        schema = detect_schema(conn=conn) if conn is not None else detect_schema()
+        if not _has_table(schema, "download_task"):
+            return _empty_optional_page(page, page_size, capability=False)
+        active_conn, close_after = _active_conn(conn)
+        try:
+            page_num, clean_page_size, offset = normalize_page(page, page_size)
+            where, params = _download_where(schema, keyword, status)
+            joins = _download_joins(schema)
+            where_sql = f" WHERE {' AND '.join(where)}" if where else ""
+            count = active_conn.execute(f"SELECT COUNT(*) AS total FROM download_task d {joins}{where_sql}", params).fetchone()
+            rows = active_conn.execute(
+                f"""
+                SELECT
+                    d.user_guid,
+                    d.media_file,
+                    d.output_file,
+                    d.resolution,
+                    d.status,
+                    d.create_time,
+                    d.update_time,
+                    u.username
+                FROM download_task d
+                {joins}
+                {where_sql}
+                ORDER BY COALESCE(d.update_time, d.create_time, 0) DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*params, clean_page_size, offset),
+            ).fetchall()
+            items = [
+                {
+                    "user_guid": str(row["user_guid"] or ""),
+                    "username": str(row["username"] or row["user_guid"] or ""),
+                    "media_file": str(row["media_file"] or ""),
+                    "output_file": str(row["output_file"] or ""),
+                    "resolution": str(row["resolution"] or ""),
+                    "status": row["status"],
+                    "status_text": _download_status_text(row["status"]),
+                    "create_time": normalize_timestamp(row["create_time"]) or "",
+                    "update_time": normalize_timestamp(row["update_time"]) or "",
+                }
+                for row in rows
+            ]
+            total = int(count["total"] or 0) if count else 0
+            pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
+            return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capability": True}
+        finally:
+            if close_after:
+                active_conn.close()
+    except (AppError, sqlite3.Error):
+        return _empty_optional_page(page, page_size, capability=False)
+
+
+def watched_field_diagnostics(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    try:
+        schema = detect_schema(conn=conn) if conn is not None else detect_schema()
+        table = schema.plays.table
+        watched_col = schema.plays.fields.get("watched")
+        if not table or not watched_col:
+            return {"available": False, "watched_min": None, "watched_max": None, "watched_distinct_sample": [], "watched_nonzero_count": 0}
+        active_conn, close_after = _active_conn(conn)
+        try:
+            visible = _visible_clause(schema)
+            where_sql = f" WHERE {visible}" if visible else ""
+            row = active_conn.execute(
+                f"""
+                SELECT
+                    MIN({quote_identifier(watched_col)}) AS watched_min,
+                    MAX({quote_identifier(watched_col)}) AS watched_max,
+                    SUM(CASE WHEN {quote_identifier(watched_col)} IS NOT NULL AND CAST({quote_identifier(watched_col)} AS REAL) != 0 THEN 1 ELSE 0 END) AS watched_nonzero_count
+                FROM {quote_identifier(table)}
+                {where_sql}
+                """
+            ).fetchone()
+            sample_rows = active_conn.execute(
+                f"""
+                SELECT DISTINCT {quote_identifier(watched_col)} AS value
+                FROM {quote_identifier(table)}
+                {where_sql}
+                ORDER BY value ASC
+                LIMIT 10
+                """
+            ).fetchall()
+            return {
+                "available": True,
+                "watched_min": row["watched_min"] if row else None,
+                "watched_max": row["watched_max"] if row else None,
+                "watched_distinct_sample": [sample["value"] for sample in sample_rows],
+                "watched_nonzero_count": int(row["watched_nonzero_count"] or 0) if row else 0,
+            }
+        finally:
+            if close_after:
+                active_conn.close()
+    except (AppError, sqlite3.Error):
+        return {"available": False, "watched_min": None, "watched_max": None, "watched_distinct_sample": [], "watched_nonzero_count": 0}
+
+
 def _find_column(schema: FntvSchemaInfo, table_name: str | None, hints: tuple[str, ...]) -> str | None:
     table = schema.tables.get(table_name or "")
     return find_column(table, hints) if table else None
+
+
+def _has_table(schema: FntvSchemaInfo, table_name: str) -> bool:
+    return table_name in schema.tables
+
+
+def _active_conn(conn: sqlite3.Connection | None) -> tuple[sqlite3.Connection, bool]:
+    if conn is not None:
+        return conn, False
+    return open_fntv_connection(), True
 
 
 def _play_time_columns(schema: FntvSchemaInfo) -> list[str]:
@@ -452,6 +678,14 @@ def _play_time_expr(schema: FntvSchemaInfo, alias: str | None = None) -> str | N
         return None
     expressions = [f"NULLIF(NULLIF({_qualified_column(column, alias)}, 0), '')" for column in columns]
     return expressions[0] if len(expressions) == 1 else f"COALESCE({', '.join(expressions)})"
+
+
+def _recent_update_time_expr(schema: FntvSchemaInfo, alias: str | None = None) -> str | None:
+    table = schema.tables.get(schema.plays.table or "")
+    if not table:
+        return None
+    column = find_column(table, ("update_time", "last_play_time", "played_at", "time", "timestamp", "create_time"))
+    return _qualified_column(column, alias) if column else None
 
 
 def _timestamp_seconds_expr(expr: str) -> str:
@@ -481,6 +715,26 @@ def _play_time_value(row: dict[str, Any], schema: FntvSchemaInfo) -> Any:
         value = row.get(column)
         if value not in (None, "", 0, "0"):
             return value
+    return None
+
+
+def _play_start_value(row: dict[str, Any], schema: FntvSchemaInfo) -> Any:
+    table = schema.tables.get(schema.plays.table or "")
+    for column in ("create_time", "start_time", "played_at", "time"):
+        if table and column in table.columns:
+            value = row.get(column)
+            if value not in (None, "", 0, "0"):
+                return value
+    return _play_time_value(row, schema)
+
+
+def _recent_update_value(row: dict[str, Any], schema: FntvSchemaInfo) -> Any:
+    table = schema.tables.get(schema.plays.table or "")
+    for column in ("update_time", "last_play_time", "played_at", "time", "timestamp", "create_time"):
+        if table and column in table.columns:
+            value = row.get(column)
+            if value not in (None, "", 0, "0"):
+                return value
     return None
 
 
@@ -544,6 +798,22 @@ def _count_today_plays(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int:
         where.append(visible)
     row = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(table)} WHERE {' AND '.join(where)}", params).fetchone()
     return int(row["total"]) if row else 0
+
+
+def _range_bounds(value: Any) -> tuple[int | None, int | None]:
+    if value in (None, "", "all"):
+        return None, None
+    timezone = _app_timezone()
+    now = datetime.now(timezone) if timezone else datetime.now().astimezone()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    key = str(value).strip().lower()
+    if key in {"today", "1d"}:
+        return int(today.timestamp()), int((today + timedelta(days=1)).timestamp())
+    if key in {"7", "7d", "last7"}:
+        return int((today - timedelta(days=6)).timestamp()), None
+    if key in {"30", "30d", "last30"}:
+        return int((today - timedelta(days=29)).timestamp()), None
+    return None, None
 
 
 def _latest_play_time(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> str | None:
@@ -638,15 +908,23 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
                 where.append(f"LOWER(i.{quote_identifier(schema.items.fields['media_type'])}) = LOWER(?)")
                 params.append(filters["media_type"])
     time_expr = _play_time_expr(schema, "p")
+    seconds_expr = _timestamp_seconds_expr(time_expr) if time_expr else None
+    range_start, range_end = _range_bounds(filters.get("range"))
+    if range_start and seconds_expr:
+        where.append(f"{seconds_expr} >= ?")
+        params.append(range_start)
+    if range_end and seconds_expr:
+        where.append(f"{seconds_expr} < ?")
+        params.append(range_end)
     if filters.get("start_time") and time_expr:
         start = _parse_datetime_to_seconds(filters["start_time"])
         if start:
-            where.append(f"{time_expr} >= ?")
+            where.append(f"{seconds_expr or time_expr} >= ?")
             params.append(start)
     if filters.get("end_time") and time_expr:
         end = _parse_datetime_to_seconds(filters["end_time"])
         if end:
-            where.append(f"{time_expr} <= ?")
+            where.append(f"{seconds_expr or time_expr} <= ?")
             params.append(end)
     keyword = (filters.get("keyword") or "").strip()
     if keyword:
@@ -766,6 +1044,7 @@ def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict
         "item_guid": item_guid,
         "title": title,
         "display_title": title,
+        "started_at": normalize_timestamp(_play_start_value(row, schema)) or "",
         "played_at": normalize_timestamp(_play_time_value(row, schema)) or "",
         "position_seconds": progress["position_seconds"],
         "runtime_seconds": progress["runtime_seconds"],
@@ -1287,6 +1566,70 @@ def _empty_page(page: int, page_size: int, error: str | None = None, capabilitie
     if error:
         data["error"] = error
     return data
+
+
+def _empty_optional_page(page: int, page_size: int, capability: bool) -> dict[str, Any]:
+    page_num, clean_page_size, _ = normalize_page(page, page_size)
+    return {"items": [], "page": page_num, "page_size": clean_page_size, "total": 0, "pages": 0, "capability": capability}
+
+
+def _favorite_joins(schema: FntvSchemaInfo) -> str:
+    joins: list[str] = []
+    if schema.users.table and schema.users.fields.get("guid"):
+        joins.append(f"LEFT JOIN {quote_identifier(schema.users.table)} u ON f.user_guid = u.{quote_identifier(schema.users.fields['guid'])}")
+    else:
+        joins.append("LEFT JOIN (SELECT NULL AS guid, NULL AS username WHERE 0) u ON 1 = 0")
+    if schema.items.table and schema.items.fields.get("guid"):
+        joins.append(f"LEFT JOIN {quote_identifier(schema.items.table)} i ON f.item_guid = i.{quote_identifier(schema.items.fields['guid'])}")
+    else:
+        joins.append("LEFT JOIN (SELECT NULL AS guid, NULL AS title, NULL AS original_title, NULL AS filename, NULL AS type WHERE 0) i ON 1 = 0")
+    return " ".join(joins)
+
+
+def _favorite_where(schema: FntvSchemaInfo, keyword: str | None) -> tuple[list[str], list[Any]]:
+    where: list[str] = []
+    params: list[Any] = []
+    clean = (keyword or "").strip()
+    if clean:
+        clauses = ["f.user_guid LIKE ?", "f.item_guid LIKE ?"]
+        params.extend([f"%{clean}%", f"%{clean}%"])
+        if schema.users.table:
+            clauses.append("u.username LIKE ?")
+            params.append(f"%{clean}%")
+        if schema.items.table:
+            clauses.extend(["i.title LIKE ?", "i.original_title LIKE ?", "i.filename LIKE ?"])
+            params.extend([f"%{clean}%"] * 3)
+        where.append("(" + " OR ".join(clauses) + ")")
+    return where, params
+
+
+def _download_joins(schema: FntvSchemaInfo) -> str:
+    if schema.users.table and schema.users.fields.get("guid"):
+        return f"LEFT JOIN {quote_identifier(schema.users.table)} u ON d.user_guid = u.{quote_identifier(schema.users.fields['guid'])}"
+    return "LEFT JOIN (SELECT NULL AS guid, NULL AS username WHERE 0) u ON 1 = 0"
+
+
+def _download_where(schema: FntvSchemaInfo, keyword: str | None, status: str | None) -> tuple[list[str], list[Any]]:
+    del schema
+    where: list[str] = []
+    params: list[Any] = []
+    clean = (keyword or "").strip()
+    if clean:
+        where.append("(d.user_guid LIKE ? OR d.media_file LIKE ? OR d.output_file LIKE ? OR u.username LIKE ?)")
+        params.extend([f"%{clean}%"] * 4)
+    if status not in (None, ""):
+        where.append("CAST(d.status AS TEXT) = ?")
+        params.append(str(status))
+    return where, params
+
+
+def _download_status_text(value: Any) -> str:
+    mapping = {0: "等待中", 1: "下载中", 2: "已完成", 3: "失败"}
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return str(value or "未知")
+    return mapping.get(numeric, str(value))
 
 
 def _empty_user_stats(guid: str) -> dict[str, Any]:

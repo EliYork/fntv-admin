@@ -10,7 +10,23 @@
 
 ## 会修改飞牛影视数据库吗？
 
-不会。飞牛默认部署不再依赖 Docker 层 `:ro`，后端会使用 SQLite URI `mode=ro` 打开 `/fntv/trimmedia.db`，并设置 `PRAGMA query_only = ON`。V1 不生成 snapshot 快照，不 checkpoint 源库，不删除或修改源库 wal/shm 文件。备注、隐藏状态、管理员账号、任务日志等增强数据只写入 `/data/admin.db`。`python scripts/verify_fntv_readonly.py` 必须通过。
+不会。飞牛默认部署不再依赖 Docker 层 `:ro`，后端会使用 SQLite URI `mode=ro` 打开 `/fntv/trimmedia.db`，并设置 `PRAGMA query_only = ON`。默认直接读取源库；可选快照开启时只写 `/data/cache/trimmedia.snapshot.db`，不 checkpoint 源库，不删除或修改源库 wal/shm 文件。备注、隐藏状态、管理员账号、任务日志等增强数据只写入 `/data/admin.db`。`python scripts/verify_fntv_readonly.py` 必须通过。
+
+## 快照读取是默认开启吗？
+
+不是。`SNAPSHOT_ENABLED=false` 是默认值，系统设置中也可以关闭。开启后应用尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`；成功时业务查询优先读取快照，失败时自动回退源库只读直连。快照失败不会让页面白屏。
+
+## 最近活跃观看是真正实时吗？
+
+不是。它根据最近 5 分钟内 `item_user_play.update_time` 更新的播放记录推断，适合观察“刚刚可能在看什么”，但不是飞牛实时 session。暂停、同步延迟或客户端未及时写入数据库时，都可能有误差。
+
+## 下载记录和收藏记录会写飞牛数据库吗？
+
+不会。下载记录只读读取 `download_task`，收藏记录只读读取 `item_user_favorite`。如果对应表不存在，页面显示空状态或能力不可用，不会创建表或写入飞牛数据库。
+
+## watched 字段为什么需要诊断？
+
+不同飞牛版本中 `watched` 可能表现为看完标记，也可能看起来像累计时长。Phase 7C 在系统诊断中增加最小值、最大值、取值样本和非零数量，帮助判断字段语义；诊断不返回真实播放记录行。当前报表不会贸然改动看完记录口径。
 
 ## 公网访问安全吗？
 

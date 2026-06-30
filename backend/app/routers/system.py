@@ -33,4 +33,4 @@ def settings(db: Session = Depends(get_session), _: object = Depends(get_current
 
 @router.post("/refresh-snapshot")
 def refresh_snapshot(_: object = Depends(get_current_admin)):
-    return ok({"ok": False, "disabled": True, "message": "FNTV snapshot is disabled in V1; using readonly source database"})
+    return ok(system_service.refresh_snapshot())

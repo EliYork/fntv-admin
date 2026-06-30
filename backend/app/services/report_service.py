@@ -120,6 +120,46 @@ def play_trend(days: int | str | None = 30, conn: sqlite3.Connection | None = No
         return [by_date.get(day, {"date": day, "play_count": 0, "watched_count": 0, "active_user_count": 0}) for day in _date_range(clean_days)]
 
 
+def hourly_distribution(days: int | str | None = 30, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+    clean_days = normalize_days(days, allow_all=True)
+    buckets = [{"hour": hour, "label": f"{hour:02d}:00", "play_count": 0} for hour in range(24)]
+    with _readonly_connection(conn) as active_conn:
+        schema = adapter.detect_schema(conn=active_conn)
+        table = schema.plays.table
+        if not table:
+            return buckets
+        time_expr = _hourly_time_expr(schema)
+        if not time_expr:
+            return buckets
+        seconds_expr = _timestamp_seconds_sql(time_expr)
+        joins, where = _play_scope(schema, include_user=True, include_item=True)
+        params: list[Any] = []
+        if clean_days != "all":
+            where.append(f"{seconds_expr} >= ?")
+            params.append(_days_cutoff(clean_days))
+        rows = active_conn.execute(
+            f"""
+            SELECT {seconds_expr} AS played_seconds, COUNT(*) AS play_count
+            FROM {quote_identifier(table)} p
+            {joins}
+            WHERE {' AND '.join(where)}
+            GROUP BY played_seconds
+            """,
+            params,
+        ).fetchall()
+        timezone = adapter._app_timezone()
+        for row in rows:
+            seconds = row["played_seconds"]
+            if seconds is None:
+                continue
+            try:
+                hour = datetime.fromtimestamp(float(seconds), timezone).hour if timezone else datetime.fromtimestamp(float(seconds)).hour
+            except (OSError, OverflowError, ValueError, TypeError):
+                continue
+            buckets[hour]["play_count"] += int(row["play_count"] or 0)
+        return buckets
+
+
 def top_users(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
     clean_days = normalize_days(days, allow_all=True)
     clean_limit = normalize_limit(limit)
@@ -352,6 +392,18 @@ def _top_media_parent_join(item_table: str, item_guid_col: str, parent_col: str 
         f" LEFT JOIN {quoted_table} parent ON i.{quoted_parent} = parent.{quoted_guid}"
         f" LEFT JOIN {quoted_table} grandparent ON parent.{quoted_parent} = grandparent.{quoted_guid}"
     )
+
+
+def _hourly_time_expr(schema: adapter.FntvSchemaInfo) -> str | None:
+    table = schema.tables.get(schema.plays.table or "")
+    if not table:
+        return None
+    by_lower = {column.lower(): column for column in table.columns}
+    for name in ("create_time", "start_time", "update_time", "last_play_time", "played_at", "time", "timestamp"):
+        column = by_lower.get(name)
+        if column:
+            return f"p.{quote_identifier(column)}"
+    return None
 
 
 def _overview_play_stats(conn: sqlite3.Connection, schema: adapter.FntvSchemaInfo) -> dict[str, Any]:

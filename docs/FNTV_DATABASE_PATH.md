@@ -16,6 +16,8 @@
 
 `fntv-admin` 不会在代码中写宿主机路径，也不会写入飞牛影视数据库。
 
+可选快照读取不会改变飞牛数据库路径。源库仍是 `/fntv/trimmedia.db`，快照只写 `/data/cache/trimmedia.snapshot.db`。快照失败时系统回退源库只读直连。
+
 `fntv-admin` 自己的数据目录推荐读写挂载：
 
 ```yaml
@@ -33,3 +35,4 @@
 - 后端连接启用 `PRAGMA query_only = ON`。
 - `python scripts/verify_fntv_readonly.py` 验证没有飞牛数据库写入路径。
 - 增强数据只写入 `/data/admin.db`。
+- 可选快照只写 `/data/cache`，不写 `/fntv`。

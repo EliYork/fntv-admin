@@ -7,6 +7,7 @@
       </div>
       <div class="header-actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadStatus">刷新</el-button>
+        <el-button :loading="snapshotRefreshing" @click="handleRefreshSnapshot">刷新快照</el-button>
         <el-button :icon="CopyDocument" :loading="copying" @click="copyDiagnostics">复制诊断信息</el-button>
       </div>
     </div>
@@ -45,11 +46,17 @@
       <div class="panel-title">快照</div>
       <el-descriptions :column="1" border>
         <el-descriptions-item label="快照状态">
-          <el-tag type="info" size="small">已禁用</el-tag>
+          <el-tag :type="snapshotStatusTag" size="small">{{ snapshotStatusLabel }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="当前数据源">
           <el-tag :type="activeDatabaseTag" size="small">{{ activeDatabaseLabel }}</el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="快照路径">{{ status.fntv.snapshot_path_container }}</el-descriptions-item>
+        <el-descriptions-item label="快照文件存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="快照目录可写">{{ status.fntv.snapshot_dir_writable ? '是' : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="最近刷新">{{ status.fntv.snapshot_last_refresh_at ? new Date(status.fntv.snapshot_last_refresh_at * 1000).toLocaleString() : '-' }}</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.fallback_to_source" label="降级状态">快照不可用，已回退源库只读直连</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.snapshot_error_message" label="快照错误">{{ status.fntv.snapshot_error_message }}</el-descriptions-item>
       </el-descriptions>
     </div>
 
@@ -121,6 +128,17 @@
         </el-descriptions>
       </div>
 
+      <div class="sub-section" v-if="status.fntv.watched_diagnostics">
+        <div class="sub-title">watched 字段诊断</div>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="可诊断">{{ status.fntv.watched_diagnostics.available ? '是' : '否' }}</el-descriptions-item>
+          <el-descriptions-item label="最小值">{{ status.fntv.watched_diagnostics.watched_min ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="最大值">{{ status.fntv.watched_diagnostics.watched_max ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="非零数量">{{ status.fntv.watched_diagnostics.watched_nonzero_count }}</el-descriptions-item>
+          <el-descriptions-item label="取值样本">{{ status.fntv.watched_diagnostics.watched_distinct_sample?.join(', ') || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+
       <div class="sub-section" v-if="status.fntv.detected_tables?.length">
         <div class="sub-title">检测到的表</div>
         <div class="table-list">
@@ -142,6 +160,21 @@
       <div class="sub-section">
         <el-button size="small" @click="copyDiagnostics">复制诊断信息</el-button>
       </div>
+    </div>
+
+    <div class="table-panel section">
+      <div class="panel-title panel-title-row">
+        <span>下载记录诊断</span>
+        <el-button size="small" :loading="downloadsLoading" @click="loadDownloads">刷新下载记录</el-button>
+      </div>
+      <el-table v-if="downloads.length" :data="downloads">
+        <el-table-column prop="username" label="用户" min-width="140" />
+        <el-table-column prop="media_file" label="媒体文件" min-width="220" />
+        <el-table-column prop="resolution" label="分辨率" width="100" />
+        <el-table-column prop="status_text" label="状态" width="100" />
+        <el-table-column prop="update_time" label="更新时间" min-width="150" />
+      </el-table>
+      <EmptyState v-else description="暂无下载记录或未识别 download_task 表" />
     </div>
 
     <div v-if="status && !status.fntv.ok" class="table-panel section">
@@ -176,7 +209,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { CopyDocument, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { fetchDatabaseStatusDetail, type DatabaseStatus } from '../api/system'
+import { fetchDatabaseStatusDetail, refreshSnapshot, type DatabaseStatus } from '../api/system'
+import { fetchDownloads, type DownloadItem } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 import { useAuthStore } from '../stores/auth'
@@ -184,8 +218,11 @@ import { useAuthStore } from '../stores/auth'
 const status = ref<DatabaseStatus | null>(null)
 const loading = ref(false)
 const copying = ref(false)
+const snapshotRefreshing = ref(false)
+const downloadsLoading = ref(false)
 const copyDialogVisible = ref(false)
 const copyText = ref('')
+const downloads = ref<DownloadItem[]>([])
 const copyTextareaRef = ref<InstanceType<typeof import('element-plus')['ElInput']> | null>(null)
 const auth = useAuthStore()
 
@@ -196,6 +233,8 @@ const capabilityLabels: Record<string, string> = {
   can_join_user_names: '关联用户名',
   can_join_item_titles: '关联媒体标题',
   can_calculate_progress: '计算播放进度',
+  can_read_favorites: '读取收藏记录',
+  can_read_downloads: '读取下载记录',
 }
 
 const sourceDirectLabel = computed(() => {
@@ -221,6 +260,7 @@ const databaseAvailabilityTag = computed(() => {
 const activeDatabaseLabel = computed(() => {
   if (!status.value) return '-'
   const v = status.value.fntv.active_database
+  if (v === 'snapshot') return '快照只读'
   if (v === 'source') return '源库只读直连'
   return '未连接'
 })
@@ -228,7 +268,22 @@ const activeDatabaseLabel = computed(() => {
 const activeDatabaseTag = computed(() => {
   if (!status.value) return 'info'
   const v = status.value.fntv.active_database
+  if (v === 'snapshot') return 'success'
   if (v === 'source') return 'success'
+  return 'danger'
+})
+
+const snapshotStatusLabel = computed(() => {
+  if (!status.value?.fntv.snapshot_enabled) return '已禁用'
+  if (status.value.fntv.snapshot_ok) return '可用'
+  if (status.value.fntv.fallback_to_source) return '失败，已回退源库'
+  return '不可用'
+})
+
+const snapshotStatusTag = computed(() => {
+  if (!status.value?.fntv.snapshot_enabled) return 'info'
+  if (status.value.fntv.snapshot_ok) return 'success'
+  if (status.value.fntv.fallback_to_source) return 'warning'
   return 'danger'
 })
 
@@ -240,8 +295,29 @@ async function loadStatus() {
   loading.value = true
   try {
     status.value = await fetchDatabaseStatusDetail()
+    await loadDownloads()
   } finally {
     loading.value = false
+  }
+}
+
+async function loadDownloads() {
+  downloadsLoading.value = true
+  try {
+    downloads.value = (await fetchDownloads({ page: 1, page_size: 10 })).items
+  } finally {
+    downloadsLoading.value = false
+  }
+}
+
+async function handleRefreshSnapshot() {
+  snapshotRefreshing.value = true
+  try {
+    await refreshSnapshot()
+    await loadStatus()
+    ElMessage.success('快照刷新请求已完成')
+  } finally {
+    snapshotRefreshing.value = false
   }
 }
 
@@ -257,6 +333,9 @@ function buildDiagnosticsJson(source: DatabaseStatus | null = status.value): str
       active_db_path: source.fntv.active_db_path ?? null,
       availability: source.fntv.availability ?? null,
       snapshot_enabled: source.fntv.snapshot_enabled ?? false,
+      snapshot_ok: source.fntv.snapshot_ok ?? null,
+      snapshot_last_refresh_at: source.fntv.snapshot_last_refresh_at ?? null,
+      fallback_to_source: source.fntv.fallback_to_source ?? false,
       error: source.fntv.error ?? null,
       error_type: source.fntv.error_type ?? null,
       error_message: source.fntv.error_message ?? null,
@@ -266,6 +345,7 @@ function buildDiagnosticsJson(source: DatabaseStatus | null = status.value): str
       core_candidates: source.fntv.core_candidates ?? {},
       required_tables_status: source.fntv.required_tables_status ?? {},
       capabilities: source.fntv.capabilities ?? {},
+      watched_diagnostics: source.fntv.watched_diagnostics ?? null,
     },
     admin: {
       exists: source.admin.exists,
@@ -343,5 +423,11 @@ useRouteRefresh(loadStatus)
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 </style>

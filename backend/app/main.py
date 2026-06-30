@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.errors import register_exception_handlers
 from app.core.logging import setup_logging
-from app.routers import auth, dashboard, history, logs, media, reports, settings, system, tasks, users
+from app.routers import auth, dashboard, downloads, favorites, history, logs, media, reports, settings, system, tasks, users
 from app.services.system_service import startup_check
 
 setup_logging()
@@ -38,6 +38,8 @@ app.include_router(history.router)
 app.include_router(users.router)
 app.include_router(media.router)
 app.include_router(reports.router)
+app.include_router(favorites.router)
+app.include_router(downloads.router)
 app.include_router(tasks.router)
 app.include_router(logs.router)
 app.include_router(settings.router)

@@ -95,6 +95,27 @@
 
       <div class="table-panel">
         <div class="panel-title panel-title-row">
+          <span>播放时段分布</span>
+          <span class="panel-state">{{ panelStatus(hourly) }}</span>
+        </div>
+        <div class="panel-body" v-loading="initialLoading(hourly)">
+          <div v-if="hourly.loading && hourly.hasLoaded" class="inline-updating">正在更新...</div>
+          <div v-if="hourly.error" :class="hourly.hasLoaded ? 'inline-warning' : 'inline-error'">{{ hourly.error }}</div>
+          <template v-if="hourly.items.length">
+            <div v-for="row in hourly.items" :key="row.hour" class="distribution-row">
+              <span class="distribution-name">{{ row.label }}</span>
+              <div class="bar-track">
+                <div class="bar-fill" :style="{ width: `${barWidth(row.play_count, hourlyMax)}%` }"></div>
+              </div>
+              <span class="distribution-count">{{ row.play_count }}</span>
+            </div>
+          </template>
+          <EmptyState v-else-if="!hourly.loading" description="暂无播放时段数据" />
+        </div>
+      </div>
+
+      <div class="table-panel">
+        <div class="panel-title panel-title-row">
           <span>媒体类型分布</span>
           <span class="panel-state">{{ panelStatus(mediaTypes) }}</span>
         </div>
@@ -138,6 +159,24 @@
           <el-table-column prop="last_played_at" label="最近播放" min-width="160" />
         </el-table>
         <EmptyState v-else-if="!topUsers.loading" description="暂无活跃用户数据" />
+      </div>
+    </div>
+
+    <div class="table-panel section">
+      <div class="panel-title panel-title-row">
+        <span>收藏记录</span>
+        <span class="panel-state">{{ panelStatus(favorites) }}</span>
+      </div>
+      <div class="panel-body" v-loading="initialLoading(favorites)">
+        <div v-if="favorites.loading && favorites.hasLoaded" class="inline-updating">正在更新...</div>
+        <div v-if="favorites.error" :class="favorites.hasLoaded ? 'inline-warning' : 'inline-error'">{{ favorites.error }}</div>
+        <el-table v-if="favorites.items.length" :data="favorites.items">
+          <el-table-column prop="username" label="用户" min-width="160" />
+          <el-table-column prop="title" label="媒体" min-width="260" />
+          <el-table-column prop="media_type" label="类型" width="110" />
+          <el-table-column prop="favorite_time" label="收藏时间" min-width="160" />
+        </el-table>
+        <EmptyState v-else-if="!favorites.loading" description="暂无收藏记录或未识别收藏表" />
       </div>
     </div>
 
@@ -207,10 +246,14 @@ import EmptyState from '../components/EmptyState.vue'
 import {
   fetchReportMediaTypeDistribution,
   fetchReportOverview,
+  fetchReportHourlyDistribution,
   fetchReportPlayTrend,
   fetchReportResolutionDistribution,
   fetchReportTopMedia,
   fetchReportTopUsers,
+  fetchFavorites,
+  type FavoriteItem,
+  type HourlyDistributionItem,
   type MediaTypeDistributionItem,
   type PlayTrendItem,
   type ReportOverview,
@@ -264,10 +307,12 @@ const rangeOptions: Array<{ label: string; value: RangeKey }> = [
 
 const overview = reactive<DetailState<ReportOverview>>(createDetailState<ReportOverview>())
 const trend = reactive<ListState<PlayTrendItem>>(createListState<PlayTrendItem>())
+const hourly = reactive<ListState<HourlyDistributionItem>>(createListState<HourlyDistributionItem>())
 const topUsers = reactive<ListState<TopUserReportItem>>(createListState<TopUserReportItem>())
 const topMedia = reactive<ListState<TopMediaReportItem>>(createListState<TopMediaReportItem>())
 const mediaTypes = reactive<ListState<MediaTypeDistributionItem>>(createListState<MediaTypeDistributionItem>())
 const resolutions = reactive<ListState<ResolutionDistributionItem>>(createListState<ResolutionDistributionItem>())
+const favorites = reactive<ListState<FavoriteItem>>(createListState<FavoriteItem>())
 const heatmapTooltip = reactive({
   visible: false,
   left: 0,
@@ -278,8 +323,8 @@ const heatmapTooltip = reactive({
   activeUserCount: 0
 })
 
-const globalLoading = computed(() => overview.loading || trend.loading || topUsers.loading || topMedia.loading || mediaTypes.loading || resolutions.loading)
-const allStates = computed(() => [overview, trend, topUsers, topMedia, mediaTypes, resolutions])
+const globalLoading = computed(() => overview.loading || trend.loading || hourly.loading || topUsers.loading || topMedia.loading || mediaTypes.loading || resolutions.loading || favorites.loading)
+const allStates = computed(() => [overview, trend, hourly, topUsers, topMedia, mediaTypes, resolutions, favorites])
 const hasAnyLoaded = computed(() => allStates.value.some((state) => state.hasLoaded))
 const anyRefreshing = computed(() => allStates.value.some((state) => state.loading && state.hasLoaded))
 const latestReportUpdatedAt = computed(() => {
@@ -287,6 +332,7 @@ const latestReportUpdatedAt = computed(() => {
   return latest > 0 ? formatClock(latest) : ''
 })
 const trendMax = computed(() => maxValue(trend.items.map((item) => item.play_count)))
+const hourlyMax = computed(() => maxValue(hourly.items.map((item) => item.play_count)))
 const trendTotal = computed(() => trend.items.reduce((total, item) => total + item.play_count, 0))
 const heatmapWeeks = computed(() => buildHeatmapWeeks(trend.items))
 const heatmapMonthLabels = computed(() =>
@@ -377,6 +423,7 @@ async function loadRangeData() {
   if (!(await ensureAuthReady())) return
   await Promise.all([
     loadList(trend, () => fetchReportPlayTrend(trendDays())),
+    loadList(hourly, () => fetchReportHourlyDistribution(trendDays())),
     loadList(topUsers, () => fetchReportTopUsers({ days: selectedDays.value, limit: 10 })),
     loadTopMedia(),
     loadList(resolutions, () => fetchReportResolutionDistribution(selectedDays.value))
@@ -393,7 +440,8 @@ async function loadAll() {
   await Promise.all([
     loadDetail(overview, fetchReportOverview),
     loadRangeData(),
-    loadList(mediaTypes, fetchReportMediaTypeDistribution)
+    loadList(mediaTypes, fetchReportMediaTypeDistribution),
+    loadList(favorites, async () => (await fetchFavorites({ page: 1, page_size: 10 })).items)
   ])
 }
 

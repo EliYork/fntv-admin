@@ -33,6 +33,15 @@ export interface AuthPolicy {
   client_ip?: string | null
 }
 
+export interface AppSettings {
+  default_page_size?: string
+  log_retention_days?: string
+  theme?: string
+  local_auth_required?: string
+  remote_access_policy?: string
+  snapshot_enabled?: string
+}
+
 export function fetchAuthStatus() {
   return getApi<AuthStatus>('/auth/status')
 }
@@ -59,4 +68,12 @@ export function fetchAuthPolicy() {
 
 export function updateAuthPolicy(payload: Pick<AuthPolicy, 'local_auth_required' | 'remote_access_policy'>) {
   return putApi<AuthPolicy>('/settings/auth-policy', payload)
+}
+
+export function fetchAppSettings() {
+  return getApi<AppSettings>('/settings')
+}
+
+export function updateSnapshotSetting(snapshotEnabled: boolean) {
+  return putApi<{ snapshot_enabled: boolean }>('/settings/database', { snapshot_enabled: snapshotEnabled })
 }

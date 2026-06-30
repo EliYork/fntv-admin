@@ -1,4 +1,4 @@
-import { getApi } from './client'
+import { getApi, postApi } from './client'
 
 export interface FntvCapabilities {
   [key: string]: boolean
@@ -56,6 +56,13 @@ export interface DatabaseStatus {
     core_candidates?: CoreCandidates
     required_tables_status?: RequiredTablesStatus
     capabilities?: FntvCapabilities
+    watched_diagnostics?: {
+      available: boolean
+      watched_min: number | string | null
+      watched_max: number | string | null
+      watched_distinct_sample: Array<number | string | null>
+      watched_nonzero_count: number
+    }
   }
   admin: {
     ok: boolean
@@ -74,4 +81,8 @@ export function fetchDatabaseStatus() {
 
 export function fetchDatabaseStatusDetail() {
   return getApi<DatabaseStatus>('/system/database-status', { detail: true })
+}
+
+export function refreshSnapshot() {
+  return postApi<Record<string, unknown>>('/system/refresh-snapshot')
 }

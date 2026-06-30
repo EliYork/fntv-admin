@@ -53,6 +53,25 @@
         </div>
       </div>
     </div>
+
+    <div class="table-panel section">
+      <div class="panel-title">数据读取</div>
+      <div class="settings-stack">
+        <el-alert
+          title="快照读取是可选增强。快照只写入 /data/cache，失败时自动回退源库只读直连。"
+          type="info"
+          show-icon
+          :closable="false"
+        />
+        <div class="settings-row">
+          <span class="setting-label">快照读取</span>
+          <el-switch v-model="snapshotEnabled" active-text="启用" inactive-text="关闭" />
+        </div>
+        <div class="settings-actions">
+          <el-button type="primary" :loading="snapshotSaving" @click="saveSnapshotSetting">保存数据读取设置</el-button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -60,7 +79,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { fetchAuthPolicy, updateAuthPolicy, type AuthPolicy, type RemoteAccessPolicy } from '../api/auth'
+import { fetchAppSettings, fetchAuthPolicy, updateAuthPolicy, updateSnapshotSetting, type AuthPolicy, type RemoteAccessPolicy } from '../api/auth'
 import { useThemeStore, type ThemeMode } from '../stores/theme'
 import { useAuthStore } from '../stores/auth'
 import { useRouteRefresh } from '../utils/routeRefresh'
@@ -73,6 +92,8 @@ const authPolicySaving = ref(false)
 const authPolicy = ref<AuthPolicy | null>(null)
 const localAuthRequired = ref(true)
 const remoteAccessPolicy = ref<RemoteAccessPolicy>('login')
+const snapshotEnabled = ref(false)
+const snapshotSaving = ref(false)
 theme.init()
 
 const themeMode = computed({
@@ -104,10 +125,15 @@ async function refreshSettings() {
   loading.value = true
   try {
     theme.reload()
-    await loadAuthPolicy()
+    await Promise.all([loadAuthPolicy(), loadAppSettings()])
   } finally {
     loading.value = false
   }
+}
+
+async function loadAppSettings() {
+  const appSettings = await fetchAppSettings()
+  snapshotEnabled.value = String(appSettings.snapshot_enabled || 'false').toLowerCase() === 'true'
 }
 
 async function loadAuthPolicy() {
@@ -132,6 +158,17 @@ async function saveAuthPolicy() {
     ElMessage.success('访问控制已更新')
   } finally {
     authPolicySaving.value = false
+  }
+}
+
+async function saveSnapshotSetting() {
+  snapshotSaving.value = true
+  try {
+    const result = await updateSnapshotSetting(snapshotEnabled.value)
+    snapshotEnabled.value = result.snapshot_enabled
+    ElMessage.success('数据读取设置已更新')
+  } finally {
+    snapshotSaving.value = false
   }
 }
 
