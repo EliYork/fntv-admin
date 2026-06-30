@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +142,27 @@ def test_play_trend(conn: sqlite3.Connection) -> None:
     assert len(report_service.play_trend(days="all", conn=conn)) == 365
 
 
+def test_weekly_hourly_distribution(conn: sqlite3.Connection) -> None:
+    rows = report_service.weekly_hourly_distribution(days="all", conn=conn)
+    assert len(rows) == 168
+    assert rows[0] == {"weekday": 0, "weekday_label": "周一", "hour": 0, "label": "周一 00:00", "play_count": 0}
+
+    timezone = report_service.adapter._app_timezone()
+    expected: dict[tuple[int, int], int] = {}
+    for seconds, count in (
+        (int(time.time()), 1),
+        (int(time.time()) - 86_400, 2),
+        (int(time.time()) - (40 * 86_400), 1),
+    ):
+        local_time = datetime.fromtimestamp(seconds, timezone)
+        key = (local_time.weekday(), local_time.hour)
+        expected[key] = expected.get(key, 0) + count
+
+    counts = {(row["weekday"], row["hour"]): row["play_count"] for row in rows}
+    for key, count in expected.items():
+        assert counts[key] == count
+
+
 def test_distribution_and_limits(conn: sqlite3.Connection) -> None:
     assert report_service.normalize_limit(99) == 50
     assert report_service.normalize_days(999) == 180
@@ -162,6 +184,7 @@ def main() -> None:
         test_top_media(conn)
         test_top_media_series_mode_rolls_episode_plays_to_series(conn)
         test_play_trend(conn)
+        test_weekly_hourly_distribution(conn)
         test_distribution_and_limits(conn)
     finally:
         conn.close()

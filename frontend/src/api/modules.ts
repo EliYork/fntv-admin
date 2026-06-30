@@ -96,6 +96,14 @@ export interface HourlyDistributionItem {
   play_count: number
 }
 
+export interface WeeklyHourlyDistributionItem {
+  weekday: number
+  weekday_label: string
+  hour: number
+  label: string
+  play_count: number
+}
+
 export interface TopUserReportItem {
   user_guid: string
   username: string
@@ -201,6 +209,10 @@ export function fetchReportPlayTrend(days: number | string = 30) {
 
 export function fetchReportHourlyDistribution(days: number | string = 30) {
   return getApi<HourlyDistributionItem[]>('/reports/hourly-distribution', { days }, { suppressGlobalError: true })
+}
+
+export function fetchReportWeeklyHourlyDistribution(days: number | string = 30) {
+  return getApi<WeeklyHourlyDistributionItem[]>('/reports/weekly-hourly-distribution', { days }, { suppressGlobalError: true })
 }
 
 export function fetchReportTopUsers(params: { days: string; limit: number }) {

@@ -24,6 +24,7 @@ MEDIA_TYPE_LABELS = {
     "directory": "目录",
     "mediadb": "媒体库",
 }
+WEEKDAY_LABELS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
 
 @contextmanager
@@ -157,6 +158,57 @@ def hourly_distribution(days: int | str | None = 30, conn: sqlite3.Connection | 
             except (OSError, OverflowError, ValueError, TypeError):
                 continue
             buckets[hour]["play_count"] += int(row["play_count"] or 0)
+        return buckets
+
+
+def weekly_hourly_distribution(days: int | str | None = 30, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+    clean_days = normalize_days(days, allow_all=True)
+    buckets = [
+        {
+            "weekday": weekday,
+            "weekday_label": WEEKDAY_LABELS[weekday],
+            "hour": hour,
+            "label": f"{WEEKDAY_LABELS[weekday]} {hour:02d}:00",
+            "play_count": 0,
+        }
+        for weekday in range(7)
+        for hour in range(24)
+    ]
+    index = {(item["weekday"], item["hour"]): item for item in buckets}
+    with _readonly_connection(conn) as active_conn:
+        schema = adapter.detect_schema(conn=active_conn)
+        table = schema.plays.table
+        if not table:
+            return buckets
+        time_expr = _hourly_time_expr(schema)
+        if not time_expr:
+            return buckets
+        seconds_expr = _timestamp_seconds_sql(time_expr)
+        joins, where = _play_scope(schema, include_user=True, include_item=True)
+        params: list[Any] = []
+        if clean_days != "all":
+            where.append(f"{seconds_expr} >= ?")
+            params.append(_days_cutoff(clean_days))
+        rows = active_conn.execute(
+            f"""
+            SELECT {seconds_expr} AS played_seconds, COUNT(*) AS play_count
+            FROM {quote_identifier(table)} p
+            {joins}
+            WHERE {' AND '.join(where)}
+            GROUP BY played_seconds
+            """,
+            params,
+        ).fetchall()
+        timezone = adapter._app_timezone()
+        for row in rows:
+            seconds = row["played_seconds"]
+            if seconds is None:
+                continue
+            try:
+                local_time = datetime.fromtimestamp(float(seconds), timezone) if timezone else datetime.fromtimestamp(float(seconds))
+            except (OSError, OverflowError, ValueError, TypeError):
+                continue
+            index[(local_time.weekday(), local_time.hour)]["play_count"] += int(row["play_count"] or 0)
         return buckets
 
 
