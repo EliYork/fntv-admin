@@ -17,6 +17,7 @@
       </header>
 
       <div v-if="overview?.error" class="monitor-error">{{ overview.error }}</div>
+      <div v-if="sectionErrors.overview" class="monitor-error">{{ sectionErrors.overview }}</div>
 
       <section class="monitor-stats">
         <article v-for="item in metricCards" :key="item.label" class="glass-card stat-card">
