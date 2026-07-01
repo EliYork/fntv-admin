@@ -49,7 +49,7 @@ def _connect() -> sqlite3.Connection:
 
 def test_today_plays_normalizes_millisecond_timestamps(conn: sqlite3.Connection) -> None:
     schema = adapter.detect_schema(conn=conn)
-    today_start = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    today_start, _ = adapter._local_day_bounds()
     yesterday_ms = (today_start - 60) * 1000
     today_ms = (today_start + 60) * 1000
     conn.executemany(

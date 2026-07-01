@@ -29,7 +29,7 @@ services:
       - "8080:8080"
 
     volumes:
-      - /vol1/Docker/fntv-admin/data:/data
+      - ./data:/data
       - /usr/local/apps/@appdata/trim.media/database:/fntv
 
     environment:
@@ -53,7 +53,7 @@ services:
 
 ```yaml
 volumes:
-  - /vol1/Docker/fntv-admin/data:/data
+  - ./data:/data
   - /usr/local/apps/@appdata/trim.media/database:/fntv
 ```
 
@@ -128,7 +128,7 @@ ghcr.io/eliyork/fntv-admin:v0.7.2
 默认 Compose 的挂载规则：
 
 ```text
-/vol1/Docker/fntv-admin/data -> /data 读写
+./data -> /data 读写
 /usr/local/apps/@appdata/trim.media/database -> /fntv
 ```
 
