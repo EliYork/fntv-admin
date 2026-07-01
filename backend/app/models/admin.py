@@ -17,7 +17,7 @@ class AdminUser(Base):
     role: Mapped[str] = mapped_column(Text, nullable=False, default="admin")
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
-    last_login_at: Mapped[int | None] = mapped_column(Integer)
+    last_login_at: Mapped[int] = mapped_column(Integer, nullable=True)
 
 
 class Setting(Base):
@@ -35,8 +35,8 @@ class UserProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fntv_user_guid: Mapped[str] = mapped_column(Text, nullable=False)
-    display_name: Mapped[str | None] = mapped_column(Text)
-    note: Mapped[str | None] = mapped_column(Text)
+    display_name: Mapped[str] = mapped_column(Text, nullable=True)
+    note: Mapped[str] = mapped_column(Text, nullable=True)
     hidden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -48,8 +48,8 @@ class MediaProfile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fntv_item_guid: Mapped[str] = mapped_column(Text, nullable=False)
-    display_title: Mapped[str | None] = mapped_column(Text)
-    note: Mapped[str | None] = mapped_column(Text)
+    display_title: Mapped[str] = mapped_column(Text, nullable=True)
+    note: Mapped[str] = mapped_column(Text, nullable=True)
     hidden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     favorite: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -62,24 +62,24 @@ class TaskLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     task_type: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    message: Mapped[str | None] = mapped_column(Text)
+    message: Mapped[str] = mapped_column(Text, nullable=True)
     started_at: Mapped[int] = mapped_column(Integer, nullable=False)
-    finished_at: Mapped[int | None] = mapped_column(Integer)
-    duration_ms: Mapped[int | None] = mapped_column(Integer)
-    error: Mapped[str | None] = mapped_column(Text)
+    finished_at: Mapped[int] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=True)
+    error: Mapped[str] = mapped_column(Text, nullable=True)
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    admin_user_id: Mapped[int | None] = mapped_column(Integer)
+    admin_user_id: Mapped[int] = mapped_column(Integer, nullable=True)
     action: Mapped[str] = mapped_column(Text, nullable=False)
-    target_type: Mapped[str | None] = mapped_column(Text)
-    target_id: Mapped[str | None] = mapped_column(Text)
-    detail: Mapped[str | None] = mapped_column(Text)
-    ip_address: Mapped[str | None] = mapped_column(Text)
-    user_agent: Mapped[str | None] = mapped_column(Text)
+    target_type: Mapped[str] = mapped_column(Text, nullable=True)
+    target_id: Mapped[str] = mapped_column(Text, nullable=True)
+    detail: Mapped[str] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[str] = mapped_column(Text, nullable=True)
+    user_agent: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
@@ -88,7 +88,7 @@ class CacheEntry(Base):
 
     cache_key: Mapped[str] = mapped_column(Text, primary_key=True)
     cache_value: Mapped[str] = mapped_column(Text, nullable=False)
-    expired_at: Mapped[int | None] = mapped_column(Integer)
+    expired_at: Mapped[int] = mapped_column(Integer, nullable=True)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 

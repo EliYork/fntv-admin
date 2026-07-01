@@ -21,7 +21,7 @@
 `fntv-admin` 自己的数据目录推荐读写挂载：
 
 ```yaml
-- /vol1/Docker/fntv-admin/data:/data
+- ./data:/data
 ```
 
 不要把飞牛影视数据库目录挂到 `/data`。
