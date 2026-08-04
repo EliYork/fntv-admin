@@ -15,7 +15,7 @@
     </div>
 
     <div class="toolbar">
-      <el-radio-group v-model="selectedDays" @change="loadRangeData">
+      <el-radio-group v-model="selectedDays" @change="handleRangeChange">
         <el-radio-button v-for="item in rangeOptions" :key="item.value" :label="item.value">
           {{ item.label }}
         </el-radio-button>
@@ -218,7 +218,7 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
-type RangeKey = '7' | '30' | '90' | 'all'
+type RangeKey = '7' | '30' | '90' | '365' | 'all'
 
 interface DetailState<T> {
   loading: boolean
@@ -239,12 +239,15 @@ interface ListState<T> {
 }
 
 const selectedDays = ref<RangeKey>('30')
+const trendDaysValue = ref<RangeKey>('365')
+let trendDaysTouched = false
 const topMediaMode = ref<'episode' | 'series'>('episode')
 const auth = useAuthStore()
 const rangeOptions: Array<{ label: string; value: RangeKey }> = [
   { label: '7 天', value: '7' },
   { label: '30 天', value: '30' },
   { label: '90 天', value: '90' },
+  { label: '1 年', value: '365' },
   { label: '全部', value: 'all' }
 ]
 
@@ -340,15 +343,21 @@ function showListEmpty<T>(state: ListState<T>): boolean {
   return !state.loading && Array.isArray(state.items) && state.items.length === 0
 }
 
-function trendDays(): number | string {
-  return selectedDays.value === 'all' ? 'all' : Number(selectedDays.value)
+function trendDaysParam(): number | string {
+  const value = trendDaysTouched ? selectedDays.value : trendDaysValue.value
+  return value === 'all' ? 'all' : Number(value)
+}
+
+async function handleRangeChange() {
+  trendDaysTouched = true
+  await loadRangeData()
 }
 
 async function loadRangeData() {
   if (!(await ensureAuthReady())) return
   await Promise.all([
-    loadList(trend, () => fetchReportPlayTrend(trendDays())),
-    loadList(hourly, () => fetchReportHourlyDistribution(trendDays())),
+    loadList(trend, () => fetchReportPlayTrend(trendDaysParam())),
+    loadList(hourly, () => fetchReportHourlyDistribution(selectedDays.value)),
     loadList(topUsers, () => fetchReportTopUsers({ days: selectedDays.value, limit: 10 })),
     loadTopMedia(),
     loadList(resolutions, () => fetchReportResolutionDistribution(selectedDays.value))
