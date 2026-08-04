@@ -27,24 +27,18 @@
         </article>
       </section>
 
-      <section class="monitor-grid two-columns">
-        <article class="glass-card monitor-card active-card">
-          <PanelHead title="最近活跃观看" note="根据最近 5 分钟播放记录推断，非实时会话。" />
+      <section class="monitor-grid">
+        <article class="glass-card monitor-card trend-card">
+          <PanelHead title="播放趋势" note="最近一年播放活跃度，颜色越深播放越多。" />
           <div class="card-body">
-            <InlineError v-if="sectionErrors.active" :message="sectionErrors.active" />
-            <div v-if="activeWatches.length" class="watch-list">
-              <div v-for="item in activeWatches" :key="item.id || `${item.user_guid}-${item.item_guid}-${item.last_updated_at}`" class="glass-list-item watch-item">
-                <div class="item-main">
-                  <strong>{{ item.display_title || item.title || '-' }}</strong>
-                  <span>{{ item.username || item.user || '-' }} · {{ item.progress || '进度未知' }}</span>
-                </div>
-                <span class="time-chip">{{ item.last_updated_at || item.played_at || '-' }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无最近活跃观看" />
+            <InlineError v-if="sectionErrors.trend" :message="sectionErrors.trend" />
+            <PlaybackHeatmap v-if="trendItems.length" :date-items="trendItems" :modes="['date']" />
+            <EmptyState v-else description="暂无播放趋势数据" />
           </div>
         </article>
+      </section>
 
+      <section class="monitor-grid two-columns">
         <article class="glass-card monitor-card">
           <PanelHead title="播放时段" note="按最近 30 天播放记录聚合，使用本地时区。" />
           <div class="card-body">
@@ -59,6 +53,58 @@
               </div>
             </div>
             <EmptyState v-else description="暂无播放时段数据" />
+          </div>
+        </article>
+
+        <article class="glass-card monitor-card">
+          <PanelHead title="媒体类型分布" note="媒体类型统计" />
+          <div class="card-body">
+            <InlineError v-if="sectionErrors.mediaTypes" :message="sectionErrors.mediaTypes" />
+            <div v-if="mediaTypeItems.length" class="hour-bars">
+              <div v-for="row in mediaTypeItems" :key="row.type" class="hour-bar-row">
+                <span class="hour-label">{{ row.type || '未知' }}</span>
+                <div class="hour-track">
+                  <span :style="{ width: `${barWidth(row.count, mediaTypeMax)}%` }"></span>
+                </div>
+                <span class="hour-count">{{ row.count }}</span>
+              </div>
+            </div>
+            <EmptyState v-else description="暂无媒体类型数据" />
+          </div>
+        </article>
+      </section>
+
+      <section class="monitor-grid two-columns">
+        <article class="glass-card monitor-card">
+          <PanelHead title="活跃用户榜" note="最近 30 天播放排行" />
+          <div class="card-body">
+            <InlineError v-if="sectionErrors.topUsers" :message="sectionErrors.topUsers" />
+            <div v-if="topUserItems.length" class="rank-list">
+              <div v-for="(item, index) in topUserItems" :key="item.user_guid || item.username" class="glass-list-item rank-item">
+                <div class="rank-title">
+                  <strong>{{ index + 1 }}. {{ item.username || item.user_guid || '-' }}</strong>
+                  <span>播放 {{ item.play_count }} 次 · 看完 {{ item.watched_count }} 次</span>
+                </div>
+              </div>
+            </div>
+            <EmptyState v-else description="暂无活跃用户数据" />
+          </div>
+        </article>
+
+        <article class="glass-card monitor-card">
+          <PanelHead title="分辨率分布" note="最近 30 天播放记录" />
+          <div class="card-body">
+            <InlineError v-if="sectionErrors.resolutions" :message="sectionErrors.resolutions" />
+            <div v-if="resolutionItems.length" class="hour-bars">
+              <div v-for="row in resolutionItems" :key="row.resolution" class="hour-bar-row">
+                <span class="hour-label" :class="{ 'muted-label': row.resolution === '未记录' }">{{ row.resolution || '未记录' }}</span>
+                <div class="hour-track">
+                  <span :style="{ width: `${barWidth(row.play_count, resolutionMax)}%` }"></span>
+                </div>
+                <span class="hour-count">{{ row.play_count }}</span>
+              </div>
+            </div>
+            <EmptyState v-else description="暂无分辨率数据" />
           </div>
         </article>
       </section>
@@ -151,24 +197,31 @@
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import {
-  fetchActiveWatches,
   fetchDashboardOverview,
   fetchDownloads,
   fetchFavorites,
   fetchRecentActivities,
   fetchReportHourlyDistribution,
+  fetchReportMediaTypeDistribution,
   fetchReportOverview,
+  fetchReportPlayTrend,
+  fetchReportResolutionDistribution,
   fetchReportTopMedia,
-  type ActiveWatchItem,
+  fetchReportTopUsers,
   type DashboardOverview,
   type DownloadItem,
   type FavoriteItem,
   type HistoryItem,
   type HourlyDistributionItem,
+  type MediaTypeDistributionItem,
+  type PlayTrendItem,
   type ReportOverview,
-  type TopMediaReportItem
+  type ResolutionDistributionItem,
+  type TopMediaReportItem,
+  type TopUserReportItem
 } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
+import PlaybackHeatmap from '../components/PlaybackHeatmap.vue'
 import { useThemeStore } from '../stores/theme'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
@@ -199,23 +252,29 @@ const theme = useThemeStore()
 const overview = ref<DashboardOverview | null>(null)
 const reportOverview = ref<ReportOverview | null>(null)
 const activities = ref<HistoryItem[]>([])
-const activeWatches = ref<ActiveWatchItem[]>([])
 const hourlyItems = ref<HourlyDistributionItem[]>([])
 const topMediaItems = ref<TopMediaReportItem[]>([])
 const favoriteItems = ref<FavoriteItem[]>([])
 const downloadItems = ref<DownloadItem[]>([])
+const trendItems = ref<PlayTrendItem[]>([])
+const mediaTypeItems = ref<MediaTypeDistributionItem[]>([])
+const topUserItems = ref<TopUserReportItem[]>([])
+const resolutionItems = ref<ResolutionDistributionItem[]>([])
 const currentTime = ref(new Date())
 const loading = ref(false)
 let clockTimer: number | undefined
 
 const sectionErrors = reactive({
   overview: '',
-  active: '',
   history: '',
   hourly: '',
   topMedia: '',
   favorites: '',
-  downloads: ''
+  downloads: '',
+  trend: '',
+  mediaTypes: '',
+  topUsers: '',
+  resolutions: ''
 })
 
 const darkMode = computed({
@@ -252,15 +311,18 @@ async function loadData() {
   loading.value = true
   clearErrors()
   try {
-    const [dashboard, report, active, recent, hourly, topMedia, favorites, downloads] = await Promise.allSettled([
+    const [dashboard, report, recent, hourly, topMedia, favorites, downloads, trend, mediaTypes, topUsers, resolutions] = await Promise.allSettled([
       fetchDashboardOverview(),
       fetchReportOverview(),
-      fetchActiveWatches(300),
       fetchRecentActivities(30),
       fetchReportHourlyDistribution(30),
       fetchReportTopMedia({ days: '7', limit: 10, mode: 'series' }),
       fetchFavorites({ page: 1, page_size: 5 }),
-      fetchDownloads({ page: 1, page_size: 5 })
+      fetchDownloads({ page: 1, page_size: 5 }),
+      fetchReportPlayTrend(365),
+      fetchReportMediaTypeDistribution(),
+      fetchReportTopUsers({ days: '30', limit: 5 }),
+      fetchReportResolutionDistribution('30')
     ])
 
     if (dashboard.status === 'fulfilled') overview.value = dashboard.value
@@ -269,8 +331,17 @@ async function loadData() {
     if (report.status === 'fulfilled') reportOverview.value = report.value
     else sectionErrors.overview = sectionErrors.overview || errorMessage(report.reason, '报表概览加载失败')
 
-    if (active.status === 'fulfilled') activeWatches.value = active.value
-    else sectionErrors.active = errorMessage(active.reason, '最近活跃观看加载失败')
+    if (trend.status === 'fulfilled') trendItems.value = trend.value
+    else sectionErrors.trend = errorMessage(trend.reason, '播放趋势加载失败')
+
+    if (mediaTypes.status === 'fulfilled') mediaTypeItems.value = mediaTypes.value
+    else sectionErrors.mediaTypes = errorMessage(mediaTypes.reason, '媒体类型分布加载失败')
+
+    if (topUsers.status === 'fulfilled') topUserItems.value = topUsers.value
+    else sectionErrors.topUsers = errorMessage(topUsers.reason, '活跃用户榜加载失败')
+
+    if (resolutions.status === 'fulfilled') resolutionItems.value = resolutions.value
+    else sectionErrors.resolutions = errorMessage(resolutions.reason, '分辨率分布加载失败')
 
     if (recent.status === 'fulfilled') activities.value = recent.value
     else sectionErrors.history = errorMessage(recent.reason, '观看历史加载失败')
@@ -307,6 +378,8 @@ function barWidth(value: number, max: number): number {
 }
 
 const hourlyMax = computed(() => hourlyItems.value.reduce((max, item) => Math.max(max, item.play_count), 0))
+const mediaTypeMax = computed(() => mediaTypeItems.value.reduce((max, item) => Math.max(max, item.count), 0))
+const resolutionMax = computed(() => resolutionItems.value.reduce((max, item) => Math.max(max, item.play_count), 0))
 
 function historyType(item: HistoryItem): string {
   return item.resolution || item.watched_text || '记录'
@@ -487,8 +560,8 @@ useRouteRefresh(loadData)
   min-height: 282px;
 }
 
-.active-card {
-  min-height: 260px;
+.trend-card {
+  min-height: auto;
 }
 
 .panel-head {
@@ -515,7 +588,6 @@ useRouteRefresh(loadData)
   padding: 16px 18px 18px;
 }
 
-.watch-list,
 .rank-list,
 .simple-list {
   display: grid;
@@ -565,16 +637,6 @@ useRouteRefresh(loadData)
   white-space: nowrap;
 }
 
-.time-chip {
-  flex: 0 0 auto;
-  max-width: 148px;
-  overflow: hidden;
-  color: var(--monitor-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .hour-bars {
   display: grid;
   gap: 7px;
@@ -593,6 +655,10 @@ useRouteRefresh(loadData)
   color: var(--monitor-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.muted-label {
+  color: var(--monitor-muted);
 }
 
 .hour-count {
