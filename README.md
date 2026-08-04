@@ -35,7 +35,7 @@ services:
 
     volumes:
       # 后台数据目录，需读写
-      - /vol1/Docker/fntv-admin/data:/data
+      - ./data:/data
 
       # 飞牛影视数据库目录，不加 :ro；应用层仍只读访问
       - /usr/local/apps/@appdata/trim.media/database:/fntv
@@ -60,7 +60,7 @@ services:
 
 ```text
 飞牛影视数据库目录：/usr/local/apps/@appdata/trim.media/database -> /fntv
-fntv-admin 数据目录：/vol1/Docker/fntv-admin/data -> /data 读写
+fntv-admin 数据目录：./data -> /data 读写
 ```
 
 `FNTV_DB_PATH` 保持 `/fntv/trimmedia.db`。不要把飞牛影视数据库目录挂到 `/data`。

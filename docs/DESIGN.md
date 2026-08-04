@@ -435,7 +435,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - /vol1/Docker/fntv-admin/data:/data
+      - ./data:/data
       - /usr/local/apps/@appdata/trim.media/database:/fntv
     environment:
       APP_ENV: production

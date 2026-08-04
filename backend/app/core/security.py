@@ -3,11 +3,21 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 import jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.core.errors import AppError
+
+
+class _BcryptAbout:
+    __version__ = getattr(bcrypt, "__version__", "")
+
+
+if not hasattr(bcrypt, "__about__"):
+    bcrypt.__about__ = _BcryptAbout()
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ALGORITHM = "HS256"
