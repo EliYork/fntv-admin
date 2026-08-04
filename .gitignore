@@ -27,6 +27,7 @@ backup/
 # Local agent / tool state
 .agents/
 .codex/
+.reasonix/
 
 # Node / frontend
 node_modules/
