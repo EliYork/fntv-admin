@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DataAnalysis, Document, Film, HomeFilled, Monitor, Setting, SwitchButton, User } from '@element-plus/icons-vue'
 import { fetchDatabaseStatus } from '../api/system'
@@ -52,6 +52,7 @@ const databaseChecking = ref(true)
 const databaseOk = ref(false)
 const refreshedAt = ref('-')
 const drawerVisible = ref(false)
+let statusTimer: number | undefined
 theme.init()
 
 const darkMode = computed({
@@ -106,7 +107,15 @@ async function handleMenuSelect(path: string) {
   await router.push(path)
 }
 
-onMounted(refreshDatabaseStatus)
+onMounted(() => {
+  refreshDatabaseStatus()
+  // 停留页面期间定时做轻量状态检查，驱动后端 TTL 判断是否该自动刷新快照
+  statusTimer = window.setInterval(refreshDatabaseStatus, 60_000)
+})
+
+onUnmounted(() => {
+  if (statusTimer) window.clearInterval(statusTimer)
+})
 </script>
 
 <style scoped>

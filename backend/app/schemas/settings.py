@@ -10,3 +10,4 @@ class AuthPolicyUpdate(BaseModel):
 
 class SnapshotSettingUpdate(BaseModel):
     snapshot_enabled: bool
+    snapshot_refresh_interval_seconds: int | None = Field(default=None, ge=0, le=7 * 24 * 3600)

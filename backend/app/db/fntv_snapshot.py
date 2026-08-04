@@ -44,6 +44,8 @@ def snapshot_status() -> dict[str, Any]:
     last_error = _last_status.get("snapshot_error")
     return {
         "snapshot_enabled": snapshot_enabled(),
+        "snapshot_refresh_interval_seconds": snapshot_refresh_interval_seconds(),
+        "snapshot_stale": _snapshot_stale(),
         "source_path_container": str(src),
         "source_exists": src.exists(),
         "source_readable": src.exists() and os.access(src, os.R_OK),
@@ -54,6 +56,7 @@ def snapshot_status() -> dict[str, Any]:
         "snapshot_dir_writable": settings.cache_dir.exists() and settings.cache_dir.is_dir() and os.access(settings.cache_dir, os.W_OK),
         "snapshot_tmp_path": str(tmp_path),
         "snapshot_last_refresh_at": meta.get("snapshot_last_refresh_at"),
+        "snapshot_last_attempt_at": meta.get("snapshot_last_attempt_at"),
         "snapshot_ok": _last_status.get("snapshot_ok", _can_read_sqlite_schema(snap) if snap.exists() else None),
         "snapshot_error": last_error,
         "snapshot_error_type": _last_status.get("snapshot_error_type"),
@@ -88,16 +91,49 @@ def snapshot_enabled() -> bool:
     return bool(settings.snapshot_enabled)
 
 
+def snapshot_refresh_interval_seconds() -> int:
+    """生效的自动刷新间隔（秒）。0 表示禁用自动刷新，仅手动刷新。"""
+    raw = _setting_str_from_admin_db("snapshot_refresh_interval_seconds")
+    if raw is not None:
+        try:
+            return max(0, int(float(raw)))
+        except (TypeError, ValueError):
+            pass
+    return int(settings.snapshot_refresh_interval_seconds or 0)
+
+
+def _snapshot_stale() -> bool:
+    """快照是否已过期（按距上次成功刷新的时间判断）。
+
+    刷新失败后记录 snapshot_last_attempt_at，在间隔内不重复重试，
+    避免每次请求都触发一次失败的整库备份。
+    """
+    interval = snapshot_refresh_interval_seconds()
+    if interval <= 0:
+        return False
+    meta = _read_meta()
+    now = int(time.time())
+    last_attempt = meta.get("snapshot_last_attempt_at")
+    if last_attempt is not None and now - int(last_attempt) < interval:
+        return False
+    last_refresh = meta.get("snapshot_last_refresh_at")
+    if last_refresh is None:
+        return True
+    return now - int(last_refresh) >= interval
+
+
 def resolve_active_fntv_database() -> dict[str, Any]:
     global _active_database
 
     snap_info = snapshot_status()
     if snap_info["snapshot_enabled"]:
         snap = snapshot_path()
-        if not snap.exists():
+        if not snap.exists() or _snapshot_stale():
             refresh_fntv_snapshot()
             snap_info = snapshot_status()
-        if snap.exists() and _can_read_sqlite_schema(snap):
+        snap_usable = snap.exists() and _can_read_sqlite_schema(snap)
+        # 快照刷新成功（或未过期）时优先使用快照
+        if snap_usable and snap_info.get("snapshot_ok") is not False:
             _active_database = "snapshot"
             return {
                 "active_database": "snapshot",
@@ -107,7 +143,42 @@ def resolve_active_fntv_database() -> dict[str, Any]:
                 "fallback_to_source": False,
                 "source_direct_ok": source_direct_ok(),
                 "snapshot_enabled": True,
-                "snapshot_ok": True,
+                "snapshot_ok": snap_info.get("snapshot_ok"),
+                "snapshot_path_container": str(snap),
+                "snapshot_error": snap_info.get("snapshot_error"),
+                "snapshot_error_type": snap_info.get("snapshot_error_type"),
+                "snapshot_error_message": snap_info.get("snapshot_error_message"),
+            }
+        # 快照刷新失败 → 自动回退源库只读直连，保证数据新鲜
+        src_ok = source_direct_ok()
+        if src_ok:
+            _active_database = "source"
+            return {
+                "active_database": "source",
+                "active_db_path": str(source_path()),
+                "availability": "available",
+                "degraded": True,
+                "fallback_to_source": True,
+                "source_direct_ok": True,
+                "snapshot_enabled": True,
+                "snapshot_ok": snap_info.get("snapshot_ok"),
+                "snapshot_path_container": str(snapshot_path()),
+                "snapshot_error": snap_info.get("snapshot_error"),
+                "snapshot_error_type": snap_info.get("snapshot_error_type"),
+                "snapshot_error_message": snap_info.get("snapshot_error_message"),
+            }
+        # 源库也不可用 → 用旧快照兜底，避免页面白屏
+        if snap_usable:
+            _active_database = "snapshot"
+            return {
+                "active_database": "snapshot",
+                "active_db_path": str(snap),
+                "availability": "available",
+                "degraded": True,
+                "fallback_to_source": False,
+                "source_direct_ok": False,
+                "snapshot_enabled": True,
+                "snapshot_ok": snap_info.get("snapshot_ok"),
                 "snapshot_path_container": str(snap),
                 "snapshot_error": snap_info.get("snapshot_error"),
                 "snapshot_error_type": snap_info.get("snapshot_error_type"),
@@ -180,6 +251,7 @@ def copy_fntv_snapshot() -> dict[str, Any]:
                 tmp.unlink()
         except OSError:
             pass
+        _record_refresh_failure()
         _last_status = {
             "snapshot_ok": False,
             "snapshot_error": "SNAPSHOT_REFRESH_FAILED",
@@ -229,17 +301,38 @@ def open_active_fntv_connection() -> sqlite3.Connection:
 
 
 def _setting_bool_from_admin_db(key: str) -> bool | None:
+    value = _setting_str_from_admin_db(key)
+    if value is None:
+        return None
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _setting_str_from_admin_db(key: str) -> str | None:
     path = settings.admin_db_path
     if not path.exists():
         return None
+    conn: sqlite3.Connection | None = None
     try:
-        with sqlite3.connect(path) as conn:
-            row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        conn = sqlite3.connect(path)
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
     except sqlite3.Error:
         return None
+    finally:
+        if conn is not None:
+            conn.close()
     if row is None or row[0] in (None, ""):
         return None
-    return str(row[0]).strip().lower() in {"1", "true", "yes", "y", "on"}
+    return str(row[0])
+
+
+def _record_refresh_failure() -> None:
+    """记录一次刷新尝试时间，用于在间隔内抑制重复失败重试。"""
+    try:
+        meta = _read_meta()
+        meta["snapshot_last_attempt_at"] = int(time.time())
+        _write_meta(meta)
+    except OSError:
+        pass
 
 
 def _read_meta() -> dict[str, Any]:

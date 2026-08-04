@@ -55,6 +55,9 @@
         <el-descriptions-item label="快照文件存在">{{ status.fntv.snapshot_exists ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="快照目录可写">{{ status.fntv.snapshot_dir_writable ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="最近刷新">{{ status.fntv.snapshot_last_refresh_at ? new Date(status.fntv.snapshot_last_refresh_at * 1000).toLocaleString() : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="自动刷新间隔">{{ refreshIntervalLabel }}</el-descriptions-item>
+        <el-descriptions-item label="下次自动刷新">{{ nextAutoRefreshLabel }}</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.snapshot_last_attempt_at" label="上次刷新尝试">{{ new Date(status.fntv.snapshot_last_attempt_at * 1000).toLocaleString() }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.fallback_to_source" label="降级状态">快照不可用，已回退源库只读直连</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.snapshot_error_message" label="快照错误">{{ status.fntv.snapshot_error_message }}</el-descriptions-item>
       </el-descriptions>
@@ -285,6 +288,24 @@ const snapshotStatusTag = computed(() => {
   if (status.value.fntv.snapshot_ok) return 'success'
   if (status.value.fntv.fallback_to_source) return 'warning'
   return 'danger'
+})
+
+const refreshIntervalLabel = computed(() => {
+  const secs = status.value?.fntv.snapshot_refresh_interval_seconds
+  if (secs === undefined || secs === null || secs === 0) return '关闭（仅手动刷新）'
+  if (secs % 86400 === 0) return `${secs / 86400} 天`
+  if (secs % 3600 === 0) return `${secs / 3600} 小时`
+  if (secs % 60 === 0) return `${secs / 60} 分钟`
+  return `${secs} 秒`
+})
+
+const nextAutoRefreshLabel = computed(() => {
+  const last = status.value?.fntv.snapshot_last_refresh_at
+  const secs = status.value?.fntv.snapshot_refresh_interval_seconds
+  if (!status.value?.fntv.snapshot_enabled || !secs) return '-'
+  if (!last) return '尚未生成快照'
+  if (status.value.fntv.snapshot_stale) return '已过期，下次访问自动刷新'
+  return new Date((last + secs) * 1000).toLocaleString()
 })
 
 function hasCapability(key: string): boolean {

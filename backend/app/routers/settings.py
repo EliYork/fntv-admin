@@ -30,7 +30,7 @@ def database_settings():
 
 @router.put("/database")
 def update_database_settings(payload: SnapshotSettingUpdate, db: Session = Depends(get_session)):
-    return ok(save_snapshot_setting(db, payload.snapshot_enabled))
+    return ok(save_snapshot_setting(db, payload.snapshot_enabled, payload.snapshot_refresh_interval_seconds))
 
 
 @router.get("/theme")

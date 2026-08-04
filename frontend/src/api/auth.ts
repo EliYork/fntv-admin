@@ -40,6 +40,7 @@ export interface AppSettings {
   local_auth_required?: string
   remote_access_policy?: string
   snapshot_enabled?: string
+  snapshot_refresh_interval_seconds?: string
 }
 
 export function fetchAuthStatus() {
@@ -74,6 +75,9 @@ export function fetchAppSettings() {
   return getApi<AppSettings>('/settings')
 }
 
-export function updateSnapshotSetting(snapshotEnabled: boolean) {
-  return putApi<{ snapshot_enabled: boolean }>('/settings/database', { snapshot_enabled: snapshotEnabled })
+export function updateSnapshotSetting(snapshotEnabled: boolean, refreshIntervalSeconds?: number) {
+  return putApi<{ snapshot_enabled: boolean; snapshot_refresh_interval_seconds: number }>('/settings/database', {
+    snapshot_enabled: snapshotEnabled,
+    snapshot_refresh_interval_seconds: refreshIntervalSeconds ?? null
+  })
 }

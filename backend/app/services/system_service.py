@@ -16,6 +16,7 @@ from app.db.fntv_snapshot import (
     resolve_active_fntv_database,
     set_active_database,
     snapshot_enabled,
+    snapshot_refresh_interval_seconds,
     snapshot_status,
 )
 from app.db.migrations import run_migrations
@@ -67,12 +68,15 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "source_readable": snap_info["source_readable"],
         "source_readonly_configured": snap_info["source_readonly_configured"],
         "snapshot_enabled": snap_info["snapshot_enabled"],
+        "snapshot_refresh_interval_seconds": snap_info.get("snapshot_refresh_interval_seconds", 3600),
+        "snapshot_stale": snap_info.get("snapshot_stale"),
         "snapshot_path_container": snap_info["snapshot_path_container"],
         "snapshot_exists": snap_info["snapshot_exists"],
         "snapshot_dir_exists": snap_info["snapshot_dir_exists"],
         "snapshot_dir_writable": snap_info["snapshot_dir_writable"],
         "snapshot_tmp_path": snap_info["snapshot_tmp_path"],
         "snapshot_last_refresh_at": snap_info["snapshot_last_refresh_at"],
+        "snapshot_last_attempt_at": snap_info.get("snapshot_last_attempt_at"),
         "snapshot_ok": snap_info["snapshot_ok"],
         "snapshot_error": snap_info["snapshot_error"],
         "snapshot_error_type": snap_info["snapshot_error_type"],
@@ -219,19 +223,31 @@ def default_settings(db: Session) -> dict[str, Any]:
             "local_auth_required": "true",
             "remote_access_policy": "login",
             "snapshot_enabled": "true" if snapshot_enabled() else "false",
+            "snapshot_refresh_interval_seconds": str(settings.snapshot_refresh_interval_seconds),
         }
         for key, value in defaults.items():
             db.merge(Setting(key=key, value=value, value_type="string", updated_at=now))
         db.commit()
         return defaults
+    # 老库可能没有该键，返回生效值，保证前端能拿到当前间隔
+    result.setdefault("snapshot_refresh_interval_seconds", str(snapshot_refresh_interval_seconds()))
     return result
 
 
-def save_snapshot_setting(db: Session, enabled: bool) -> dict[str, Any]:
+def save_snapshot_setting(db: Session, enabled: bool, interval_seconds: int | None = None) -> dict[str, Any]:
     now = now_ts()
     db.merge(Setting(key="snapshot_enabled", value="true" if enabled else "false", value_type="bool", updated_at=now))
+    if interval_seconds is not None:
+        db.merge(
+            Setting(
+                key="snapshot_refresh_interval_seconds",
+                value=str(interval_seconds),
+                value_type="string",
+                updated_at=now,
+            )
+        )
     db.commit()
-    return {"snapshot_enabled": enabled}
+    return {"snapshot_enabled": enabled, "snapshot_refresh_interval_seconds": snapshot_refresh_interval_seconds()}
 
 
 def ensure_path_is_under_data(path: Path) -> bool:

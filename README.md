@@ -169,6 +169,8 @@ ghcr.io/eliyork/fntv-admin:<tag>
 
 Phase 7C 增加可选快照读取。默认 `SNAPSHOT_ENABLED=false`，系统仍走源库只读直连。开启后，后端会尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`，业务查询优先读取快照；如果快照生成或打开失败，会自动回退源库只读直连，系统诊断页显示失败原因和 `fallback_to_source`。
 
+快照采用 TTL 懒刷新，不是定时任务：打开页面或停留在页面时自动检查，距上次成功刷新超过间隔才重建快照（默认 1 小时，`SNAPSHOT_REFRESH_INTERVAL_SECONDS` 或系统设置中可改为 15 分钟 / 30 分钟 / 6 小时 / 24 小时，设为 `0` 则关闭自动刷新、仅手动刷新）；间隔内直接使用现有快照，避免反复整库复制。刷新失败会在间隔内抑制重复重试并回退源库直读，保证数据尽量新鲜。
+
 快照只写入 `/data/cache`，不复制 `.wal/.shm` 作为主要方案，不写飞牛影视数据库，不改变 `/fntv` 挂载语义。
 
 ## 开发者本地构建

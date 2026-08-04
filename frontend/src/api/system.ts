@@ -42,6 +42,9 @@ export interface DatabaseStatus {
     snapshot_dir_writable: boolean
     snapshot_tmp_path: string
     snapshot_last_refresh_at: number | null
+    snapshot_last_attempt_at?: number | null
+    snapshot_refresh_interval_seconds?: number
+    snapshot_stale?: boolean | null
     snapshot_enabled?: boolean
     snapshot_ok: boolean | null
     snapshot_error: string | null

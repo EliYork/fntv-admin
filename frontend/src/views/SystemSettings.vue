@@ -67,6 +67,16 @@
           <span class="setting-label">快照读取</span>
           <el-switch v-model="snapshotEnabled" active-text="启用" inactive-text="关闭" />
         </div>
+        <div class="settings-row">
+          <span class="setting-label">自动刷新间隔</span>
+          <el-select v-model="snapshotRefreshInterval" style="width: 220px" :disabled="!snapshotEnabled">
+            <el-option v-for="opt in refreshIntervalOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </div>
+        <div class="settings-note">
+          <div>打开页面或停留在页面时，若距上次刷新超过所选间隔，会自动重新生成快照；间隔内直接使用现有快照，不重复刷新。</div>
+          <div>选择“关闭自动刷新”后仅通过系统诊断页的“刷新快照”按钮手动刷新。</div>
+        </div>
         <div class="settings-actions">
           <el-button type="primary" :loading="snapshotSaving" @click="saveSnapshotSetting">保存数据读取设置</el-button>
         </div>
@@ -93,7 +103,16 @@ const authPolicy = ref<AuthPolicy | null>(null)
 const localAuthRequired = ref(true)
 const remoteAccessPolicy = ref<RemoteAccessPolicy>('login')
 const snapshotEnabled = ref(false)
+const snapshotRefreshInterval = ref(3600)
 const snapshotSaving = ref(false)
+const refreshIntervalOptions = [
+  { value: 900, label: '15 分钟' },
+  { value: 1800, label: '30 分钟' },
+  { value: 3600, label: '1 小时' },
+  { value: 21600, label: '6 小时' },
+  { value: 86400, label: '24 小时' },
+  { value: 0, label: '关闭自动刷新（仅手动）' }
+]
 theme.init()
 
 const themeMode = computed({
@@ -134,6 +153,8 @@ async function refreshSettings() {
 async function loadAppSettings() {
   const appSettings = await fetchAppSettings()
   snapshotEnabled.value = String(appSettings.snapshot_enabled || 'false').toLowerCase() === 'true'
+  const rawInterval = Number(appSettings.snapshot_refresh_interval_seconds)
+  snapshotRefreshInterval.value = Number.isFinite(rawInterval) ? rawInterval : 3600
 }
 
 async function loadAuthPolicy() {
@@ -164,8 +185,9 @@ async function saveAuthPolicy() {
 async function saveSnapshotSetting() {
   snapshotSaving.value = true
   try {
-    const result = await updateSnapshotSetting(snapshotEnabled.value)
+    const result = await updateSnapshotSetting(snapshotEnabled.value, snapshotRefreshInterval.value)
     snapshotEnabled.value = result.snapshot_enabled
+    snapshotRefreshInterval.value = result.snapshot_refresh_interval_seconds
     ElMessage.success('数据读取设置已更新')
   } finally {
     snapshotSaving.value = false

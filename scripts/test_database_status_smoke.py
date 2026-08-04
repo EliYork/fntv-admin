@@ -45,6 +45,9 @@ def _create_fntv_db() -> sqlite3.Connection:
 def _source_status() -> dict[str, object]:
     return {
         "snapshot_enabled": False,
+        "snapshot_refresh_interval_seconds": 3600,
+        "snapshot_stale": False,
+        "snapshot_last_attempt_at": None,
         "source_path_container": "/fntv/trimmedia.db",
         "source_exists": True,
         "source_readable": True,
