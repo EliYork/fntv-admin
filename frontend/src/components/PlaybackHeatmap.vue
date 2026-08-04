@@ -29,7 +29,7 @@
                 v-for="cell in week.cells"
                 :key="cell.key"
                 class="heatmap-cell"
-                :class="[`level-${cell.item ? levelFor(cell.item.play_count, dateMax) : 0}`, { 'is-empty': !cell.item }]"
+                :class="[`level-${cell.item ? levelFor(cell.item.play_count, dateLevels) : 0}`, { 'is-empty': !cell.item }]"
                 :aria-label="cell.item ? `${cell.date} 播放 ${cell.item.play_count} 次` : cell.date"
                 @mouseenter="showDateTooltip($event, cell)"
                 @mousemove="moveTooltip($event)"
@@ -61,7 +61,7 @@
               v-for="cell in weeklyItems"
               :key="`${cell.weekday}-${cell.hour}`"
               class="heatmap-cell"
-              :class="`level-${levelFor(cell.play_count, weeklyMax)}`"
+              :class="`level-${levelFor(cell.play_count, weeklyLevels)}`"
               :aria-label="`${cell.label} 播放 ${cell.play_count} 次`"
               @mouseenter="showWeeklyTooltip($event, cell)"
               @mousemove="moveTooltip($event)"
@@ -123,6 +123,7 @@ const props = withDefaults(
 
 const selectedMode = ref<HeatmapMode>(props.initialMode)
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const weekdayFullLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const hourLabels = [0, 3, 6, 9, 12, 15, 18, 21, 23]
 const tooltip = reactive({
   visible: false,
@@ -142,8 +143,8 @@ const dateMonthLabels = computed(() =>
     text: monthLabelForWeek(week, index, weeks)
   }))
 )
-const dateMax = computed(() => maxValue(props.dateItems.map((item) => item.play_count)))
-const weeklyMax = computed(() => maxValue(props.weeklyItems.map((item) => item.play_count)))
+const dateLevels = computed(() => quantileLevels(props.dateItems.map((item) => item.play_count)))
+const weeklyLevels = computed(() => quantileLevels(props.weeklyItems.map((item) => item.play_count)))
 const dateTotal = computed(() => props.dateItems.reduce((total, item) => total + item.play_count, 0))
 const weeklyTotal = computed(() => props.weeklyItems.reduce((total, item) => total + item.play_count, 0))
 const modeNote = computed(() => (selectedMode.value === 'date' ? '按日期查看播放活跃度' : '按星期和小时查看播放习惯'))
@@ -170,16 +171,18 @@ const HeatmapLegend = defineComponent({
   }
 })
 
-function maxValue(values: number[]): number {
-  return values.reduce((max, value) => Math.max(max, value), 0)
+function quantileLevels(values: number[]): number[] {
+  const positive = values.filter((value) => value > 0).sort((a, b) => a - b)
+  if (!positive.length) return [Infinity, Infinity, Infinity, Infinity]
+  const pick = (q: number) => positive[Math.min(positive.length - 1, Math.floor(positive.length * q))]
+  return [pick(0.2), pick(0.4), pick(0.6), pick(0.8)]
 }
 
-function levelFor(value: number, max: number): number {
-  if (value <= 0 || max <= 0) return 0
-  const ratio = value / max
-  if (ratio >= 0.75) return 4
-  if (ratio >= 0.5) return 3
-  if (ratio >= 0.25) return 2
+function levelFor(value: number, levels: number[]): number {
+  if (value <= 0) return 0
+  if (value > levels[3]) return 4
+  if (value > levels[2]) return 3
+  if (value > levels[1]) return 2
   return 1
 }
 
@@ -209,7 +212,10 @@ function monthLabelForWeek(week: HeatmapWeek, index: number, weeks: HeatmapWeek[
   const previousMonth = index > 0 ? parseDateKey(weeks[index - 1].cells[0].date).getMonth() : -1
   const currentMonth = parseDateKey(firstCell.date).getMonth()
   const labelCell = monthStart || (index === 0 || currentMonth !== previousMonth ? firstCell : null)
-  return labelCell ? `${parseDateKey(labelCell.date).getMonth() + 1}月` : ''
+  if (!labelCell) return ''
+  const date = parseDateKey(labelCell.date)
+  const label = `${date.getMonth() + 1}月`
+  return date.getMonth() === 0 ? `${date.getFullYear()}年${label}` : label
 }
 
 function parseDateKey(value: string): Date {
@@ -240,11 +246,16 @@ function showDateTooltip(event: MouseEvent, cell: HeatmapCell): void {
     return
   }
   tooltip.visible = true
-  tooltip.title = cell.date
+  tooltip.title = formatDateTitle(cell.date)
   tooltip.playCount = cell.item.play_count
   tooltip.watchedCount = cell.item.watched_count
   tooltip.activeUserCount = cell.item.active_user_count
   moveTooltip(event)
+}
+
+function formatDateTitle(date: string): string {
+  const d = parseDateKey(date)
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${weekdayFullLabels[d.getDay()]}`
 }
 
 function showWeeklyTooltip(event: MouseEvent, cell: WeeklyHourlyDistributionItem): void {
@@ -301,8 +312,8 @@ function hideTooltip(): void {
 .date-months {
   --heatmap-columns: 5;
   display: grid;
-  grid-template-columns: 38px repeat(var(--heatmap-columns), 14px);
-  gap: 4px;
+  grid-template-columns: 38px repeat(var(--heatmap-columns), 18px);
+  gap: 5px;
   width: max-content;
   min-width: 240px;
 }
@@ -321,10 +332,10 @@ function hideTooltip(): void {
 
 .date-weekdays {
   display: grid;
-  grid-template-rows: repeat(7, 14px);
-  gap: 4px;
+  grid-template-rows: repeat(7, 18px);
+  gap: 5px;
   width: 30px;
-  line-height: 14px;
+  line-height: 18px;
   text-align: right;
 }
 
@@ -332,19 +343,19 @@ function hideTooltip(): void {
   --heatmap-columns: 5;
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(7, 14px);
-  grid-template-columns: repeat(var(--heatmap-columns), 14px);
-  gap: 4px;
+  grid-template-rows: repeat(7, 18px);
+  grid-template-columns: repeat(var(--heatmap-columns), 18px);
+  gap: 5px;
   width: max-content;
 }
 
 .weekhour-axis {
   display: grid;
-  grid-template-columns: 42px repeat(24, 16px);
-  gap: 4px;
+  grid-template-columns: 42px repeat(24, 20px);
+  gap: 5px;
   width: max-content;
   min-width: 480px;
-  line-height: 14px;
+  line-height: 18px;
   text-align: center;
 }
 
@@ -357,53 +368,58 @@ function hideTooltip(): void {
 
 .weekhour-weekdays {
   display: grid;
-  grid-template-rows: repeat(7, 16px);
-  gap: 4px;
+  grid-template-rows: repeat(7, 20px);
+  gap: 5px;
   width: 34px;
-  line-height: 16px;
+  line-height: 20px;
   text-align: right;
 }
 
 .weekhour-grid {
   display: grid;
-  grid-template-columns: repeat(24, 16px);
-  grid-template-rows: repeat(7, 16px);
+  grid-template-columns: repeat(24, 20px);
+  grid-template-rows: repeat(7, 20px);
   grid-auto-flow: row;
-  gap: 4px;
+  gap: 5px;
 }
 
 .heatmap-cell {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border: 1px solid var(--app-border-soft);
-  border-radius: 3px;
+  border-radius: 4px;
   background: #edf2f7;
 }
 
 .weekhour-grid .heatmap-cell {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
 }
 
 .heatmap-cell.is-empty {
-  opacity: 0.35;
+  border-color: transparent;
+  background: transparent;
+}
+
+.heatmap-cell.level-0 {
+  background: #f1f5f9;
 }
 
 .heatmap-cell.level-1 {
-  background: #bfdbfe;
+  background: #dbeafe;
 }
 
 .heatmap-cell.level-2 {
-  background: #60a5fa;
+  background: #93c5fd;
 }
 
 .heatmap-cell.level-3 {
-  background: #2563eb;
+  background: #3b82f6;
 }
 
 .heatmap-cell.level-4 {
-  background: #1e40af;
+  background: #1d4ed8;
 }
 
 .heatmap-summary {
@@ -445,8 +461,12 @@ function hideTooltip(): void {
   background: #1d2633;
 }
 
+[data-theme='dark'] .heatmap-cell.level-0 {
+  background: #1d2633;
+}
+
 [data-theme='dark'] .heatmap-cell.level-1 {
-  background: #1e3a5f;
+  background: #274b6e;
 }
 
 [data-theme='dark'] .heatmap-cell.level-2 {
