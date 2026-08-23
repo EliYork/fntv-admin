@@ -11,7 +11,7 @@
     <div v-if="selectedMode === 'date'" class="heatmap-wrap" @mouseleave="hideTooltip">
       <template v-if="dateItems.length">
         <div class="date-months" :style="{ '--heatmap-columns': String(dateWeeks.length) }">
-          <span v-for="label in dateMonthLabels" :key="label.key">{{ label.text }}</span>
+          <span v-for="label in dateMonthLabels" :key="label.key" :style="{ gridColumn: `${label.column} / span 4` }">{{ label.text }}</span>
         </div>
         <div class="date-body">
           <div class="date-weekdays" aria-hidden="true">
@@ -137,12 +137,7 @@ const tooltip = reactive({
 
 const availableModes = computed(() => props.modes.filter((mode) => mode === 'date' || mode === 'weekhour'))
 const dateWeeks = computed(() => buildDateWeeks(props.dateItems))
-const dateMonthLabels = computed(() =>
-  dateWeeks.value.map((week, index, weeks) => ({
-    key: week.key,
-    text: monthLabelForWeek(week, index, weeks)
-  }))
-)
+const dateMonthLabels = computed(() => buildDateMonthLabels(dateWeeks.value, props.dateItems))
 const dateLevels = computed(() => quantileLevels(props.dateItems.map((item) => item.play_count)))
 const weeklyLevels = computed(() => quantileLevels(props.weeklyItems.map((item) => item.play_count)))
 const dateTotal = computed(() => props.dateItems.reduce((total, item) => total + item.play_count, 0))
@@ -206,16 +201,28 @@ function buildDateWeeks(items: PlayTrendItem[]): HeatmapWeek[] {
   return weeks
 }
 
-function monthLabelForWeek(week: HeatmapWeek, index: number, weeks: HeatmapWeek[]): string {
-  const firstCell = week.cells[0]
-  const monthStart = week.cells.find((cell) => parseDateKey(cell.date).getDate() === 1)
-  const previousMonth = index > 0 ? parseDateKey(weeks[index - 1].cells[0].date).getMonth() : -1
-  const currentMonth = parseDateKey(firstCell.date).getMonth()
-  const labelCell = monthStart || (index === 0 || currentMonth !== previousMonth ? firstCell : null)
-  if (!labelCell) return ''
-  const date = parseDateKey(labelCell.date)
-  const label = `${date.getMonth() + 1}月`
-  return date.getMonth() === 0 ? `${date.getFullYear()}年${label}` : label
+function buildDateMonthLabels(weeks: HeatmapWeek[], items: PlayTrendItem[]) {
+  if (!weeks.length || !items.length) return []
+  const rangeStart = items[0].date
+  const rangeEnd = items[items.length - 1].date
+  const labels: Array<{ key: string; text: string; column: number }> = []
+  const firstMonth = parseDateKey(rangeStart)
+  const lastMonth = parseDateKey(rangeEnd)
+  const firstLabelMonth = firstMonth.getDate() === 1
+    ? new Date(firstMonth.getFullYear(), firstMonth.getMonth(), 1)
+    : new Date(firstMonth.getFullYear(), firstMonth.getMonth() + 1, 1)
+
+  for (let cursor = firstLabelMonth; cursor <= lastMonth; cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)) {
+    const monthStart = formatDateKey(cursor)
+    const weekIndex = weeks.findIndex((week) => week.cells.some((cell) => cell.date === monthStart))
+    if (weekIndex < 0) continue
+    labels.push({
+      key: `${cursor.getFullYear()}-${cursor.getMonth()}`,
+      text: cursor.getMonth() === 0 ? `${cursor.getFullYear()}年1月` : `${cursor.getMonth() + 1}月`,
+      column: weekIndex + 1
+    })
+  }
+  return labels
 }
 
 function parseDateKey(value: string): Date {
@@ -312,30 +319,33 @@ function hideTooltip(): void {
 .date-months {
   --heatmap-columns: 5;
   display: grid;
-  grid-template-columns: 38px repeat(var(--heatmap-columns), 18px);
-  gap: 5px;
-  width: max-content;
+  grid-template-columns: repeat(var(--heatmap-columns), minmax(13px, 17px));
+  justify-content: space-between;
+  gap: 3px;
+  width: calc(100% - 38px);
+  margin-left: 38px;
   min-width: 240px;
 }
 
-.date-months span:first-child {
-  grid-column: 2;
+.date-months span {
+  white-space: nowrap;
 }
 
 .date-body {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
   gap: 8px;
-  width: max-content;
+  width: 100%;
   min-width: 240px;
 }
 
 .date-weekdays {
   display: grid;
-  grid-template-rows: repeat(7, 18px);
-  gap: 5px;
+  grid-template-rows: repeat(7, 17px);
+  gap: 3px;
   width: 30px;
-  line-height: 18px;
+  line-height: 17px;
   text-align: right;
 }
 
@@ -343,10 +353,12 @@ function hideTooltip(): void {
   --heatmap-columns: 5;
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(7, 18px);
-  grid-template-columns: repeat(var(--heatmap-columns), 18px);
-  gap: 5px;
-  width: max-content;
+  grid-template-rows: repeat(7, 17px);
+  grid-template-columns: repeat(var(--heatmap-columns), minmax(13px, 17px));
+  justify-content: space-between;
+  gap: 3px;
+  width: 100%;
+  min-width: max-content;
 }
 
 .weekhour-axis {
@@ -385,8 +397,8 @@ function hideTooltip(): void {
 
 .heatmap-cell {
   display: inline-block;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   border: 1px solid var(--app-border-soft);
   border-radius: 4px;
   background: #edf2f7;

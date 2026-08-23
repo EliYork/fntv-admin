@@ -159,6 +159,10 @@ body {
   overflow: hidden;
 }
 
+.el-table {
+  width: 100%;
+}
+
 .muted-guid {
   color: var(--app-muted);
   font-size: 12px;
@@ -249,5 +253,10 @@ body {
   .page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .toolbar > .el-input,
+  .toolbar > .el-select {
+    width: 100% !important;
   }
 }

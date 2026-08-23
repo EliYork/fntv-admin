@@ -36,14 +36,14 @@ def _readonly_connection(conn: sqlite3.Connection | None = None) -> Iterator[sql
         yield active_conn
 
 
-def normalize_days(days: int | str | None, *, allow_all: bool = False) -> int | str:
+def normalize_days(days: int | str | None, *, allow_all: bool = False, max_days: int = MAX_DAYS) -> int | str:
     if allow_all and days == "all":
         return "all"
     try:
         clean = int(days) if days is not None else 30
     except (TypeError, ValueError):
         clean = 30
-    return max(1, min(MAX_DAYS, clean))
+    return max(1, min(max_days, clean))
 
 
 def normalize_limit(limit: int | None) -> int:
@@ -77,7 +77,7 @@ def overview(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
 
 
 def play_trend(days: int | str | None = 30, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
-    clean_days = MAX_TREND_DAYS if days == "all" else normalize_days(days)
+    clean_days = MAX_TREND_DAYS if days == "all" else normalize_days(days, max_days=MAX_TREND_DAYS)
     assert isinstance(clean_days, int)
     with _readonly_connection(conn) as active_conn:
         schema = adapter.detect_schema(conn=active_conn)

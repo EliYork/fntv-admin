@@ -1,18 +1,14 @@
 <template>
   <section class="dashboard-monitor-page">
     <div class="monitor-shell">
-      <header class="monitor-topbar">
-        <div class="monitor-brand">
-          <span class="brand-dot"></span>
-          <div>
-            <h1>fntv-admin 影视监控</h1>
-            <p>飞牛影视数据概览和轻监控面板</p>
-          </div>
+      <header class="page-header monitor-topbar">
+        <div>
+          <h1 class="page-title">仪表盘</h1>
+          <p class="page-subtitle">飞牛影视数据概览和近期播放活动</p>
         </div>
         <div class="monitor-actions">
-          <span class="clock">{{ currentClock }}</span>
-          <el-switch v-model="darkMode" inline-prompt active-text="暗" inactive-text="亮" />
-          <el-button round :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
+          <span v-if="lastUpdatedAt" class="updated-at">更新于 {{ lastUpdatedAt }}</span>
+          <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
         </div>
       </header>
 
@@ -195,7 +191,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import {
   fetchDashboardOverview,
@@ -223,7 +219,6 @@ import {
 } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
 import PlaybackHeatmap from '../components/PlaybackHeatmap.vue'
-import { useThemeStore } from '../stores/theme'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
 const PanelHead = defineComponent({
@@ -249,7 +244,6 @@ const InlineError = defineComponent({
   }
 })
 
-const theme = useThemeStore()
 const overview = ref<DashboardOverview | null>(null)
 const reportOverview = ref<ReportOverview | null>(null)
 const activities = ref<HistoryItem[]>([])
@@ -261,9 +255,8 @@ const trendItems = ref<PlayTrendItem[]>([])
 const mediaTypeItems = ref<MediaTypeDistributionItem[]>([])
 const topUserItems = ref<TopUserReportItem[]>([])
 const resolutionItems = ref<ResolutionDistributionItem[]>([])
-const currentTime = ref(new Date())
+const lastUpdatedAt = ref('')
 const loading = ref(false)
-let clockTimer: number | undefined
 
 const sectionErrors = reactive({
   overview: '',
@@ -277,13 +270,6 @@ const sectionErrors = reactive({
   topUsers: '',
   resolutions: ''
 })
-
-const darkMode = computed({
-  get: () => theme.resolved === 'dark',
-  set: (enabled: boolean) => theme.setMode(enabled ? 'dark' : 'light')
-})
-
-const currentClock = computed(() => currentTime.value.toLocaleTimeString('zh-CN', { hour12: false }))
 
 const metricCards = computed(() => [
   {
@@ -358,6 +344,7 @@ async function loadData() {
 
     if (downloads.status === 'fulfilled') downloadItems.value = downloads.value.items || []
     else sectionErrors.downloads = errorMessage(downloads.reason, '下载记录加载失败')
+    lastUpdatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
   } finally {
     loading.value = false
   }
@@ -397,15 +384,7 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 onMounted(() => {
-  theme.init()
-  clockTimer = window.setInterval(() => {
-    currentTime.value = new Date()
-  }, 1000)
   loadData()
-})
-
-onUnmounted(() => {
-  if (clockTimer) window.clearInterval(clockTimer)
 })
 
 useRouteRefresh(loadData)
@@ -413,27 +392,18 @@ useRouteRefresh(loadData)
 
 <style scoped>
 .dashboard-monitor-page {
-  --monitor-ink: #1c2940;
-  --monitor-muted: #6a7484;
-  --monitor-accent: #2f7bff;
-  --monitor-glass: rgba(255, 255, 255, 0.72);
-  --monitor-glass-strong: rgba(255, 255, 255, 0.84);
-  --monitor-border: rgba(255, 255, 255, 0.58);
-  --monitor-shadow: 0 18px 36px rgba(65, 105, 155, 0.18);
-  min-height: calc(100vh - 102px);
-  margin: -22px;
-  padding: 28px 22px 34px;
+  --monitor-ink: var(--app-title);
+  --monitor-muted: var(--app-muted);
+  --monitor-accent: var(--app-accent);
+  --monitor-border: var(--app-border);
+  --monitor-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
   color: var(--monitor-ink);
-  background:
-    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0) 32%),
-    linear-gradient(180deg, #cfe2ff 0%, #e7f1ff 52%, #ffffff 100%);
 }
 
 .monitor-shell {
   display: grid;
   gap: 16px;
-  width: min(1220px, 100%);
-  margin: 0 auto;
+  width: 100%;
 }
 
 .monitor-topbar,
@@ -449,36 +419,6 @@ useRouteRefresh(loadData)
   gap: 18px;
 }
 
-.monitor-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.brand-dot {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--monitor-accent);
-  box-shadow: 0 0 0 7px rgba(47, 123, 255, 0.16);
-}
-
-.monitor-brand h1 {
-  margin: 0;
-  color: var(--monitor-ink);
-  font-size: 22px;
-  font-weight: 760;
-  letter-spacing: 0;
-}
-
-.monitor-brand p {
-  margin: 5px 0 0;
-  color: var(--monitor-muted);
-  font-size: 13px;
-}
-
 .monitor-actions {
   display: flex;
   align-items: center;
@@ -487,7 +427,7 @@ useRouteRefresh(loadData)
   flex-wrap: wrap;
 }
 
-.clock {
+.updated-at {
   color: var(--monitor-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -495,17 +435,13 @@ useRouteRefresh(loadData)
 .glass-card,
 .monitor-actions :deep(.el-button) {
   border: 1px solid var(--monitor-border);
-  background:
-    linear-gradient(180deg, var(--monitor-glass-strong), rgba(255, 255, 255, 0.22)),
-    var(--monitor-glass);
+  background: var(--app-surface);
   box-shadow: var(--monitor-shadow);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
 }
 
 .glass-card {
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 10px;
 }
 
 .monitor-stats {
@@ -606,9 +542,9 @@ useRouteRefresh(loadData)
   gap: 12px;
   min-width: 0;
   padding: 11px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.2));
+  border: 1px solid var(--app-border-soft);
+  border-radius: 8px;
+  background: var(--app-surface-soft);
 }
 
 .item-main,
@@ -671,7 +607,7 @@ useRouteRefresh(loadData)
   display: block;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.42);
+  background: var(--app-bar-track);
 }
 
 .hour-track {
@@ -701,7 +637,7 @@ useRouteRefresh(loadData)
   align-items: center;
   gap: 10px;
   padding: 10px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+  border-bottom: 1px solid var(--app-border-soft);
   color: var(--monitor-ink);
   font-size: 13px;
 }
@@ -781,21 +717,12 @@ useRouteRefresh(loadData)
 }
 
 :global([data-theme='dark']) .dashboard-monitor-page {
-  --monitor-ink: #edf4ff;
-  --monitor-muted: #a7b2c2;
-  --monitor-accent: #72a8ff;
-  --monitor-glass: rgba(22, 28, 38, 0.74);
-  --monitor-glass-strong: rgba(38, 48, 64, 0.78);
-  --monitor-border: rgba(255, 255, 255, 0.18);
-  --monitor-shadow: 0 22px 44px rgba(0, 0, 0, 0.46);
-  background:
-    radial-gradient(circle at 14% 8%, rgba(85, 137, 220, 0.28), rgba(255, 255, 255, 0) 34%),
-    linear-gradient(180deg, #122a5c 0%, #0b1426 58%, #06090f 100%);
+  --monitor-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
 :global([data-theme='dark']) .glass-list-item {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
+  border-color: var(--app-border-soft);
+  background: var(--app-surface-soft);
 }
 
 :global([data-theme='dark']) .hour-track,
@@ -822,11 +749,6 @@ useRouteRefresh(loadData)
 }
 
 @media (max-width: 680px) {
-  .dashboard-monitor-page {
-    margin: -22px -14px;
-    padding: 20px 12px 28px;
-  }
-
   .monitor-topbar,
   .panel-head {
     align-items: flex-start;
