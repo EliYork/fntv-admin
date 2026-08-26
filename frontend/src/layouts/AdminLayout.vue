@@ -25,7 +25,7 @@
           </span>
         </AppTooltip>
 
-        <el-button class="toolbar-button refresh-button" text :icon="Refresh" aria-label="刷新当前页面数据" @click="refreshCurrentPage">
+        <el-button class="toolbar-button refresh-button" text :icon="Refresh" :loading="refreshing" aria-label="刷新当前页面数据" @click="refreshCurrentPage">
           <span class="button-label">刷新</span>
         </el-button>
         <el-button
@@ -97,7 +97,6 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
   ArrowRight,
-  DataAnalysis,
   Document,
   Film,
   HomeFilled,
@@ -109,7 +108,8 @@ import {
   SwitchButton,
   User
 } from '@element-plus/icons-vue'
-import { fetchDatabaseStatus } from '../api/system'
+import { ElMessage } from 'element-plus'
+import { fetchDatabaseStatus, refreshSnapshot, type DatabaseStatus } from '../api/system'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { formatInstant } from '../utils/applicationTime'
@@ -128,6 +128,8 @@ const auth = useAuthStore()
 const theme = useThemeStore()
 const databaseChecking = ref(true)
 const databaseOk = ref(false)
+const databaseStatus = ref<DatabaseStatus | null>(null)
+const refreshing = ref(false)
 const refreshedAt = ref('-')
 const dashboardFreshness = ref<DashboardFreshness | null>(null)
 const drawerVisible = ref(false)
@@ -150,8 +152,7 @@ const navigationGroups = [
     label: '查看',
     items: [
       { path: '/dashboard', label: '数据中心', description: '主要统计与连续观看历史', icon: HomeFilled },
-      { path: '/history', label: '观看历史', description: '独立浏览完整播放记录', icon: Document },
-      { path: '/reports', label: '报表中心', description: '低频分布与高级统计', icon: DataAnalysis }
+      { path: '/history', label: '观看历史', description: '独立浏览完整播放记录', icon: Document }
     ]
   },
   {
@@ -188,9 +189,12 @@ const databaseStatusCompactLabel = computed(() => {
 async function refreshDatabaseStatus() {
   try {
     const status = await fetchDatabaseStatus()
+    databaseStatus.value = status
     databaseOk.value = status.fntv.availability === 'available'
+    return status
   } catch {
     databaseOk.value = false
+    return null
   } finally {
     databaseChecking.value = false
     refreshedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
@@ -206,8 +210,28 @@ async function goToDashboard() {
 }
 
 async function refreshCurrentPage() {
-  await refreshDatabaseStatus()
-  await router.replace({ path: route.path, query: { ...route.query, refresh: String(Date.now()) } })
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    let currentStatus = databaseStatus.value
+    if (!currentStatus) currentStatus = await refreshDatabaseStatus()
+    if (currentStatus?.fntv.snapshot_enabled) {
+      try {
+        const result = await refreshSnapshot()
+        if (result.refresh_in_progress) {
+          ElMessage.info('快照正在刷新，已继续刷新页面数据')
+        } else if (!result.ok) {
+          ElMessage.warning(result.fallback_to_source ? '快照刷新失败，已使用源库' : '快照刷新失败，已继续刷新页面')
+        }
+      } catch {
+        ElMessage.warning('快照刷新失败，已继续刷新页面')
+      }
+    }
+    await refreshDatabaseStatus()
+    await router.replace({ path: route.path, query: { ...route.query, refresh: String(Date.now()) } })
+  } finally {
+    refreshing.value = false
+  }
 }
 
 async function navigateTo(path: string) {

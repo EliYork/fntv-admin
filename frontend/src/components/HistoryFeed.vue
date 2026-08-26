@@ -327,6 +327,7 @@ function secondaryTitle(item: HistoryItem): string {
 }
 
 function progressPercent(item: HistoryItem): number | null {
+  if (item.watched) return 100
   const position = validSeconds(item.position_seconds)
   const runtime = validSeconds(item.runtime_seconds)
   if (position !== null) {
@@ -335,17 +336,16 @@ function progressPercent(item: HistoryItem): number | null {
     return null
   }
   if (typeof item.progress_percent === 'number' && Number.isFinite(item.progress_percent)) return Math.max(0, Math.min(100, item.progress_percent))
-  if (item.watched) return 100
   return null
 }
 
 function progressText(item: HistoryItem): string {
+  if (item.watched) return '已看完'
   const position = validSeconds(item.position_seconds)
   const runtime = validSeconds(item.runtime_seconds)
   if (position !== null && runtime !== null && runtime > 0) return `${formatPlaybackTime(position)} / ${formatPlaybackTime(runtime)}`
   if (position !== null) return formatPlaybackTime(position)
   if (typeof item.progress_percent === 'number' && Number.isFinite(item.progress_percent)) return `${Math.round(Math.max(0, Math.min(100, item.progress_percent)))}%`
-  if (item.watched) return '已完成'
   if (item.progress && item.progress !== '-') return item.progress
   const percent = progressPercent(item)
   return percent == null ? '进度未知' : `${Math.round(percent)}%`

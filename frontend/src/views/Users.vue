@@ -14,21 +14,28 @@
     </div>
     <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
     <div class="table-panel">
-      <el-table v-if="pageData?.items.length" v-loading="loading" :data="pageData.items" @sort-change="handleSortChange">
-        <el-table-column prop="username" label="用户名" min-width="160" sortable="custom" />
+      <el-table v-if="pageData?.items.length" v-loading="loading" :data="pageData.items">
+        <el-table-column prop="username" min-width="160">
+          <template #header><SortHeader label="用户名" sort-key="username" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
+        </el-table-column>
         <el-table-column label="GUID" min-width="220">
           <template #default="{ row }">
             <span class="muted-guid">{{ row.guid }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="play_count" label="播放次数" width="110" sortable="custom" />
-        <el-table-column prop="watch_seconds" label="观看时长" width="120" sortable="custom">
+        <el-table-column prop="play_count" width="110">
+          <template #header><SortHeader label="播放次数" sort-key="play_count" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
+        </el-table-column>
+        <el-table-column prop="watch_seconds" width="120">
+          <template #header><SortHeader label="观看时长" sort-key="watch_duration" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
           <template #default="{ row }">{{ row.watch_duration }}</template>
         </el-table-column>
-        <el-table-column prop="last_play_at" label="最近播放" min-width="170" sortable="custom">
+        <el-table-column prop="last_play_at" min-width="170">
+          <template #header><SortHeader label="最近播放" sort-key="last_play_at" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
           <template #default="{ row }">{{ formatApplicationDateTime(row.last_play_at) }}</template>
         </el-table-column>
-        <el-table-column prop="last_login_at" label="最近登录" min-width="170" sortable="custom">
+        <el-table-column prop="last_login_at" min-width="170">
+          <template #header><SortHeader label="最近登录" sort-key="last_login_at" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
           <template #default="{ row }">{{ formatApplicationDateTime(row.last_login_at) }}</template>
         </el-table-column>
         <el-table-column prop="note" label="备注" min-width="180" />
@@ -55,8 +62,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { defineComponent, h, onMounted, ref } from 'vue'
+import { ArrowDown, ArrowUp, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchUsers, hideUser, type UserItem } from '../api/modules'
 import type { PageData } from '../types/api'
@@ -71,8 +78,30 @@ const page = ref(1)
 const pageSize = ref(20)
 const pageData = ref<PageData<UserItem> | null>(null)
 const loading = ref(false)
+type SortDirection = 'asc' | 'desc'
 const sortBy = ref('')
-const sortOrder = ref('')
+const sortOrder = ref<SortDirection>('asc')
+
+const SortHeader = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    sortKey: { type: String, required: true },
+    activeKey: { type: String, required: true },
+    direction: { type: String as () => SortDirection, required: true }
+  },
+  emits: { sort: (_key: string) => true },
+  setup(props, { emit }) {
+    return () => h('button', {
+      type: 'button',
+      class: ['sort-header', { 'is-active': props.activeKey === props.sortKey }],
+      'aria-label': `${props.label}，${props.activeKey === props.sortKey ? (props.direction === 'asc' ? '当前升序，点击切换为降序' : '当前降序，点击切换为升序') : '点击排序'}`,
+      onClick: () => emit('sort', props.sortKey)
+    }, [
+      h('span', props.label),
+      props.activeKey === props.sortKey ? h(props.direction === 'asc' ? ArrowUp : ArrowDown, { class: 'sort-direction', 'aria-hidden': 'true' }) : null
+    ])
+  }
+})
 
 async function loadData() {
   loading.value = true
@@ -108,16 +137,17 @@ async function handlePageSizeChange(value: number) {
   await loadData()
 }
 
-function handleSortChange(event: { prop: string; order: 'ascending' | 'descending' | null }) {
-  const sortMap: Record<string, string> = {
-    username: 'username',
-    play_count: 'play_count',
-    watch_seconds: 'watch_duration',
-    last_play_at: 'last_play_at',
-    last_login_at: 'last_login_at'
+function applySort(key: string) {
+  const defaultDirections: Record<string, SortDirection> = {
+    username: 'asc',
+    play_count: 'desc',
+    watch_duration: 'desc',
+    last_play_at: 'desc',
+    last_login_at: 'desc'
   }
-  sortBy.value = event.order && sortMap[event.prop] ? sortMap[event.prop] : ''
-  sortOrder.value = event.order === 'descending' ? 'desc' : event.order === 'ascending' ? 'asc' : ''
+  if (!(key in defaultDirections)) return
+  sortOrder.value = sortBy.value === key ? (sortOrder.value === 'asc' ? 'desc' : 'asc') : defaultDirections[key]
+  sortBy.value = key
   page.value = 1
   void loadData()
 }
@@ -132,3 +162,26 @@ async function toggleHidden(guid: string, hidden: boolean) {
 onMounted(loadData)
 useRouteRefresh(loadData)
 </script>
+
+<style scoped>
+:deep(.el-table th.el-table__cell) { padding: 0; }
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+}
+.sort-header:hover, .sort-header.is-active { color: var(--app-accent); }
+.sort-header:focus-visible { outline: 2px solid var(--app-accent); outline-offset: -3px; }
+.sort-direction { width: 14px; height: 14px; flex: 0 0 auto; }
+</style>

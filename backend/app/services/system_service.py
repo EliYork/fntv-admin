@@ -56,9 +56,8 @@ def storage_status() -> dict[str, Any]:
 
 
 def database_status(detail: bool = False) -> dict[str, Any]:
-    snap_info = snapshot_status()
     active_info = resolve_active_fntv_database()
-    snap_info = {**snap_info, **active_info}
+    snap_info = {**snapshot_status(), **active_info}
     fntv: dict[str, Any] = {
         "path": snap_info["source_path_container"],
         "exists": snap_info["source_exists"],
@@ -70,6 +69,10 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "snapshot_enabled": snap_info["snapshot_enabled"],
         "snapshot_refresh_interval_seconds": snap_info.get("snapshot_refresh_interval_seconds", 3600),
         "snapshot_stale": snap_info.get("snapshot_stale"),
+        "snapshot_refreshing": snap_info.get("snapshot_refreshing", False),
+        "snapshot_retry_suppressed": snap_info.get("snapshot_retry_suppressed", False),
+        "snapshot_next_refresh_at": snap_info.get("snapshot_next_refresh_at"),
+        "snapshot_schedule_state": snap_info.get("snapshot_schedule_state", "manual_only"),
         "snapshot_path_container": snap_info["snapshot_path_container"],
         "snapshot_exists": snap_info["snapshot_exists"],
         "snapshot_dir_exists": snap_info["snapshot_dir_exists"],

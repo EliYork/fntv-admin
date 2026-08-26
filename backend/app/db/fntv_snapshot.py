@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,7 @@ from app.core.errors import AppError
 
 _active_database: str = "none"
 _last_status: dict[str, Any] = {}
+_refresh_lock = threading.Lock()
 
 SNAPSHOT_META_NAME = "trimmedia.snapshot.json"
 
@@ -39,13 +42,18 @@ def set_active_database(value: str) -> None:
 def snapshot_status() -> dict[str, Any]:
     snap = snapshot_path()
     src = source_path()
-    tmp_path = snap.with_name(snap.stem + ".tmp" + snap.suffix)
+    tmp_path = snap.with_name("trimmedia.snapshot.*.tmp.db")
     meta = _read_meta()
+    schedule = _snapshot_schedule(meta)
     last_error = _last_status.get("snapshot_error")
     return {
         "snapshot_enabled": snapshot_enabled(),
         "snapshot_refresh_interval_seconds": snapshot_refresh_interval_seconds(),
-        "snapshot_stale": _snapshot_stale(),
+        "snapshot_stale": schedule["due"],
+        "snapshot_refreshing": _refresh_lock.locked(),
+        "snapshot_retry_suppressed": schedule["state"] == "retry_wait",
+        "snapshot_next_refresh_at": schedule["next_refresh_at"],
+        "snapshot_schedule_state": "refreshing" if _refresh_lock.locked() else schedule["state"],
         "source_path_container": str(src),
         "source_exists": src.exists(),
         "source_readable": src.exists() and os.access(src, os.R_OK),
@@ -108,18 +116,30 @@ def _snapshot_stale() -> bool:
     刷新失败后记录 snapshot_last_attempt_at，在间隔内不重复重试，
     避免每次请求都触发一次失败的整库备份。
     """
+    return bool(_snapshot_schedule(_read_meta())["due"])
+
+
+def _snapshot_schedule(meta: dict[str, Any] | None = None, now: int | None = None) -> dict[str, Any]:
+    """返回自动刷新真实调度状态，失败重试以最近一次尝试为基准。"""
     interval = snapshot_refresh_interval_seconds()
     if interval <= 0:
-        return False
-    meta = _read_meta()
-    now = int(time.time())
-    last_attempt = meta.get("snapshot_last_attempt_at")
-    if last_attempt is not None and now - int(last_attempt) < interval:
-        return False
-    last_refresh = meta.get("snapshot_last_refresh_at")
-    if last_refresh is None:
-        return True
-    return now - int(last_refresh) >= interval
+        return {"state": "manual_only", "due": False, "next_refresh_at": None}
+    values = meta if meta is not None else _read_meta()
+    current = int(time.time()) if now is None else int(now)
+    last_refresh = _meta_timestamp(values.get("snapshot_last_refresh_at"))
+    last_attempt = _meta_timestamp(values.get("snapshot_last_attempt_at"))
+    failed_attempt = last_attempt is not None and (last_refresh is None or last_attempt > last_refresh)
+    base = last_attempt if failed_attempt else last_refresh
+    if base is None:
+        return {"state": "due", "due": True, "next_refresh_at": current}
+    next_refresh = base + interval
+    if current >= next_refresh:
+        return {"state": "due", "due": True, "next_refresh_at": current}
+    return {
+        "state": "retry_wait" if failed_attempt else "scheduled",
+        "due": False,
+        "next_refresh_at": next_refresh,
+    }
 
 
 def resolve_active_fntv_database() -> dict[str, Any]:
@@ -129,7 +149,7 @@ def resolve_active_fntv_database() -> dict[str, Any]:
     if snap_info["snapshot_enabled"]:
         snap = snapshot_path()
         if not snap.exists() or _snapshot_stale():
-            refresh_fntv_snapshot()
+            trigger_fntv_snapshot_refresh()
             snap_info = snapshot_status()
         snap_usable = snap.exists() and _can_read_sqlite_schema(snap)
         # 快照刷新成功（或未过期）时优先使用快照
@@ -217,18 +237,60 @@ def resolve_active_fntv_database() -> dict[str, Any]:
 
 
 def copy_fntv_snapshot() -> dict[str, Any]:
-    global _last_status
+    """同步请求刷新；若已有任务在执行则立即返回，不等待也不重复刷新。"""
+    return refresh_fntv_snapshot()
+
+
+def refresh_fntv_snapshot() -> dict[str, Any]:
     if not snapshot_enabled():
-        _last_status = {"snapshot_ok": None, "snapshot_error": None, "snapshot_error_type": None, "snapshot_error_message": None}
-        return {"ok": False, "disabled": True, "message": "FNTV snapshot is disabled; using readonly source database"}
+        return _snapshot_disabled_result()
+    process_lock, acquired = _acquire_refresh_guards()
+    if not acquired:
+        return _snapshot_busy_result()
+    try:
+        return _copy_fntv_snapshot_locked()
+    finally:
+        _release_process_refresh_lock(process_lock)
+        _refresh_lock.release()
+
+
+def trigger_fntv_snapshot_refresh() -> dict[str, Any]:
+    """非阻塞触发自动刷新，页面读取继续使用旧快照或只读源库。"""
+    if not snapshot_enabled():
+        return _snapshot_disabled_result()
+    process_lock, acquired = _acquire_refresh_guards()
+    if not acquired:
+        return _snapshot_busy_result()
+
+    def run() -> None:
+        try:
+            _copy_fntv_snapshot_locked()
+        finally:
+            _release_process_refresh_lock(process_lock)
+            _refresh_lock.release()
+
+    threading.Thread(target=run, name="fntv-snapshot-refresh", daemon=True).start()
+    return {
+        "ok": True,
+        "started": True,
+        "refresh_in_progress": True,
+        "message": "快照刷新已开始",
+    }
+
+
+def _copy_fntv_snapshot_locked() -> dict[str, Any]:
+    global _last_status
     snap = snapshot_path()
-    tmp = snap.with_name(snap.stem + ".tmp" + snap.suffix)
+    tmp: Path | None = None
+    attempt_at = int(time.time())
     try:
         if settings.cache_dir.exists() and not settings.cache_dir.is_dir():
             raise OSError("snapshot cache path is not a directory")
         settings.cache_dir.mkdir(parents=True, exist_ok=True)
-        if tmp.exists():
-            tmp.unlink()
+        _record_refresh_attempt(attempt_at)
+        handle, tmp_name = tempfile.mkstemp(prefix="trimmedia.snapshot.", suffix=".tmp.db", dir=settings.cache_dir)
+        os.close(handle)
+        tmp = Path(tmp_name)
         with open_fntv_source_connection() as source_conn:
             with sqlite3.connect(tmp) as target_conn:
                 source_conn.backup(target_conn)
@@ -237,7 +299,7 @@ def copy_fntv_snapshot() -> dict[str, Any]:
                     raise sqlite3.DatabaseError("snapshot quick_check failed")
         os.replace(tmp, snap)
         refreshed_at = int(time.time())
-        _write_meta({"snapshot_last_refresh_at": refreshed_at})
+        _write_meta({"snapshot_last_refresh_at": refreshed_at, "snapshot_last_attempt_at": attempt_at})
         _last_status = {"snapshot_ok": True, "snapshot_error": None, "snapshot_error_type": None, "snapshot_error_message": None}
         return {
             "ok": True,
@@ -247,7 +309,7 @@ def copy_fntv_snapshot() -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         try:
-            if tmp.exists():
+            if tmp is not None and tmp.exists():
                 tmp.unlink()
         except OSError:
             pass
@@ -267,8 +329,75 @@ def copy_fntv_snapshot() -> dict[str, Any]:
         }
 
 
-def refresh_fntv_snapshot() -> dict[str, Any]:
-    return copy_fntv_snapshot()
+def _snapshot_disabled_result() -> dict[str, Any]:
+    global _last_status
+    _last_status = {"snapshot_ok": None, "snapshot_error": None, "snapshot_error_type": None, "snapshot_error_message": None}
+    return {"ok": False, "disabled": True, "message": "快照未启用，继续使用源库只读直连"}
+
+
+def _snapshot_busy_result() -> dict[str, Any]:
+    return {
+        "ok": False,
+        "skipped": True,
+        "refresh_in_progress": True,
+        "message": "快照正在刷新，本次未重复启动",
+        "fallback_to_source": source_direct_ok(),
+    }
+
+
+def _acquire_refresh_guards() -> tuple[Any | None, bool]:
+    """同时取得进程内和跨进程非阻塞门控；官方单进程部署与未来多 worker 均安全。"""
+    if not _refresh_lock.acquire(blocking=False):
+        return None, False
+    try:
+        process_lock = _try_acquire_process_refresh_lock()
+    except OSError:
+        # 目录不可用时仍进入正式刷新路径，让统一错误与 fallback 逻辑记录失败。
+        return None, True
+    if process_lock is None:
+        _refresh_lock.release()
+        return None, False
+    return process_lock, True
+
+
+def _try_acquire_process_refresh_lock() -> Any | None:
+    settings.cache_dir.mkdir(parents=True, exist_ok=True)
+    stream = (settings.cache_dir / "trimmedia.snapshot.lock").open("a+b")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"0")
+                stream.flush()
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return stream
+    except (BlockingIOError, OSError):
+        stream.close()
+        return None
+
+
+def _release_process_refresh_lock(stream: Any | None) -> None:
+    if stream is None:
+        return
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+    finally:
+        stream.close()
 
 
 def open_fntv_source_connection() -> sqlite3.Connection:
@@ -325,11 +454,20 @@ def _setting_str_from_admin_db(key: str) -> str | None:
     return str(row[0])
 
 
-def _record_refresh_failure() -> None:
+def _record_refresh_attempt(attempt_at: int | None = None) -> None:
+    try:
+        meta = _read_meta()
+        meta["snapshot_last_attempt_at"] = int(time.time()) if attempt_at is None else int(attempt_at)
+        _write_meta(meta)
+    except OSError:
+        pass
+
+
+def _record_refresh_failure(attempt_at: int | None = None) -> None:
     """记录一次刷新尝试时间，用于在间隔内抑制重复失败重试。"""
     try:
         meta = _read_meta()
-        meta["snapshot_last_attempt_at"] = int(time.time())
+        meta["snapshot_last_attempt_at"] = int(time.time()) if attempt_at is None else int(attempt_at)
         _write_meta(meta)
     except OSError:
         pass
@@ -351,9 +489,23 @@ def _write_meta(data: dict[str, Any]) -> None:
     import json
 
     path = snapshot_meta_path()
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _meta_timestamp(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _sanitize_error(message: str) -> str:

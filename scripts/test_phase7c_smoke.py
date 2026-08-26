@@ -190,6 +190,8 @@ def test_snapshot_disabled_and_failed_fallback_status() -> None:
         blocked_cache = tmp_root / "phase7c-cache-as-file"
         blocked_cache.write_text("not a directory", encoding="utf-8")
         fntv_snapshot.settings.cache_dir = blocked_cache
+        refresh = fntv_snapshot.refresh_fntv_snapshot()
+        assert refresh["ok"] is False
         failed = fntv_snapshot.resolve_active_fntv_database()
         assert failed["active_database"] == "source"
         assert failed["fallback_to_source"] is True

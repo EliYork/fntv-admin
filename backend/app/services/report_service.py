@@ -86,7 +86,7 @@ def play_trend(days: int | str | None = 365, conn: sqlite3.Connection | None = N
         if not table or not time_expr:
             return _empty_trend(clean_days)
         seconds_expr = _timestamp_seconds_sql(time_expr)
-        watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
+        watched_expr = adapter.watched_sql_expression(schema)
         joins, where = _play_scope(schema, include_user=True, include_item=True)
         cutoff = _days_cutoff(clean_days)
         where.append(f"{seconds_expr} >= ?")
@@ -221,7 +221,7 @@ def top_users(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
         if not table or not play_user_col or not user_table or not user_guid_col:
             return []
         seconds_expr = _timestamp_seconds_sql(time_expr) if time_expr else None
-        watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
+        watched_expr = adapter.watched_sql_expression(schema)
         watch_seconds_expr = _duration_seconds_sql(_qualified(schema.plays.fields.get("position"), "p"))
         username_expr = _display_expr(schema, schema.users.table, "u", ("username", "nickname", "name", "display_name", "guid"))
         # Active-user aggregation has no media dependency. Avoiding the item join
@@ -289,7 +289,7 @@ def top_media(days: int | str | None = 30, limit: int | None = 10, mode: str = "
         if not table or not play_item_col or not item_table or not item_guid_col:
             return []
         seconds_expr = _timestamp_seconds_sql(time_expr) if time_expr else None
-        watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
+        watched_expr = adapter.watched_sql_expression(schema)
         type_col = schema.items.fields.get("media_type")
         parent_col = schema.items.fields.get("parent_guid")
         title_expr = _display_expr(schema, schema.items.table, "i", ("title", "original_title", "filename", "name", "guid"))
@@ -470,7 +470,7 @@ def _overview_play_stats(conn: sqlite3.Connection, schema: adapter.FntvSchemaInf
         return _empty_play_stats()
     joins, where = _play_scope(schema, include_user=True, include_item=True)
     seconds_expr = _timestamp_seconds_sql(time_expr) if time_expr else None
-    watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
+    watched_expr = adapter.watched_sql_expression(schema)
     watch_seconds_expr = _duration_seconds_sql(_qualified(schema.plays.fields.get("position"), "p"))
     active_7d_expr = _count_distinct_recent(user_col, seconds_expr, 7)
     active_30d_expr = _count_distinct_recent(user_col, seconds_expr, 30)
@@ -589,17 +589,6 @@ def _duration_seconds_sql(expr: str | None, *, runtime: bool = False) -> str:
     return f"(CASE WHEN {expr} IS NULL OR {expr} = '' THEN 0 WHEN CAST({expr} AS REAL) > 1000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
 
 
-def _watched_sql(column: str | None, alias: str) -> str:
-    if not column:
-        return "0"
-    expr = f"{alias}.{quote_identifier(column)}"
-    return (
-        f"(CASE WHEN {expr} IS NULL THEN 0 "
-        f"WHEN LOWER(CAST({expr} AS TEXT)) IN ('1','true','yes','y','watched','completed','finished') THEN 1 "
-        f"WHEN CAST({expr} AS REAL) > 0 THEN 1 ELSE 0 END)"
-    )
-
-
 def _display_expr(schema: adapter.FntvSchemaInfo, table_name: str | None, alias: str, columns: tuple[str, ...], fallback: str = "''") -> str:
     table = schema.tables.get(table_name or "")
     if not table:
@@ -625,10 +614,10 @@ def _count_distinct_recent(user_col: str | None, seconds_expr: str | None, days:
 def _avg_progress_expr(schema: adapter.FntvSchemaInfo) -> str:
     position_expr = _duration_seconds_sql(_qualified(schema.plays.fields.get("position"), "p"))
     runtime_expr = _duration_seconds_sql(_qualified(schema.items.fields.get("runtime"), "i"), runtime=True)
-    watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
+    watched_expr = adapter.watched_sql_expression(schema)
     if not schema.items.table or not schema.plays.fields.get("position") or not schema.items.fields.get("runtime"):
         return "NULL"
-    return f"AVG(CASE WHEN {runtime_expr} > 0 THEN MIN(100.0, ({position_expr} / {runtime_expr}) * 100.0) WHEN {watched_expr} = 1 THEN 100.0 ELSE NULL END)"
+    return f"AVG(CASE WHEN {watched_expr} = 1 THEN 100.0 WHEN {runtime_expr} > 0 THEN MIN(100.0, ({position_expr} / {runtime_expr}) * 100.0) ELSE NULL END)"
 
 
 def _days_cutoff(days: int | str) -> int:

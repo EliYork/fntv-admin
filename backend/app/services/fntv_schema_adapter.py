@@ -177,8 +177,13 @@ def format_duration(seconds: int | float | None) -> str:
 def format_play_progress(position_value: Any, runtime_value: Any, watched: bool, runtime_is_seconds: bool = False) -> dict[str, Any]:
     position_seconds = normalize_duration_seconds(position_value)
     runtime_seconds = normalize_duration_seconds(runtime_value) if runtime_is_seconds else normalize_runtime_seconds(runtime_value)
-    if watched and position_seconds is None and runtime_seconds is None:
-        return {"position_seconds": None, "runtime_seconds": None, "progress_percent": 100, "progress": "已完成"}
+    if watched:
+        return {
+            "position_seconds": position_seconds,
+            "runtime_seconds": runtime_seconds,
+            "progress_percent": 100.0,
+            "progress": "已看完",
+        }
     if position_seconds is not None and runtime_seconds and runtime_seconds > 0:
         percent = min(100.0, round((position_seconds / runtime_seconds) * 100, 1))
         return {
@@ -189,7 +194,56 @@ def format_play_progress(position_value: Any, runtime_value: Any, watched: bool,
         }
     if position_seconds is not None:
         return {"position_seconds": position_seconds, "runtime_seconds": runtime_seconds, "progress_percent": None, "progress": format_duration(position_seconds)}
-    return {"position_seconds": None, "runtime_seconds": runtime_seconds, "progress_percent": None, "progress": "已完成" if watched else "-"}
+    return {"position_seconds": None, "runtime_seconds": runtime_seconds, "progress_percent": None, "progress": "-"}
+
+
+def resolve_watched(
+    watched_value: Any,
+    *,
+    watched_field_present: bool,
+    position_value: Any,
+    runtime_value: Any,
+    runtime_is_seconds: bool = False,
+) -> bool:
+    """显式完成字段具有最高优先级；仅字段缺失时才按 position/runtime 推断。"""
+    if watched_field_present:
+        return _truthy(watched_value)
+    position_seconds = normalize_duration_seconds(position_value)
+    runtime_seconds = normalize_duration_seconds(runtime_value) if runtime_is_seconds else normalize_runtime_seconds(runtime_value)
+    return bool(position_seconds is not None and runtime_seconds and runtime_seconds > 0 and position_seconds >= runtime_seconds)
+
+
+def watched_sql_expression(schema: FntvSchemaInfo, play_alias: str = "p", item_alias: str = "i") -> str:
+    """报表与历史共享同一完成口径：显式 watched 优先，无字段才按完整进度推断。"""
+    watched_col = schema.plays.fields.get("watched")
+    if watched_col:
+        expr = f"{play_alias}.{quote_identifier(watched_col)}"
+        return (
+            f"(CASE WHEN {expr} IS NULL THEN 0 "
+            f"WHEN LOWER(TRIM(CAST({expr} AS TEXT))) IN ('1','true','yes','y','watched','completed','finished') THEN 1 "
+            f"WHEN CAST({expr} AS REAL) != 0 THEN 1 ELSE 0 END)"
+        )
+    position_col = schema.plays.fields.get("position")
+    runtime_col = schema.items.fields.get("runtime")
+    if not position_col or not schema.items.table or not runtime_col:
+        return "0"
+    position_expr = _duration_seconds_sql(f"{play_alias}.{quote_identifier(position_col)}")
+    runtime_expr = _duration_seconds_sql(f"{item_alias}.{quote_identifier(runtime_col)}", runtime=True)
+    return f"(CASE WHEN {runtime_expr} > 0 AND {position_expr} >= {runtime_expr} THEN 1 ELSE 0 END)"
+
+
+def _duration_seconds_sql(expr: str, *, runtime: bool = False) -> str:
+    if runtime:
+        return (
+            f"(CASE WHEN {expr} IS NULL OR {expr} = '' THEN 0 "
+            f"WHEN CAST({expr} AS REAL) > 1000000 THEN CAST({expr} AS REAL) / 1000 "
+            f"WHEN CAST({expr} AS REAL) BETWEEN 1 AND 600 AND CAST({expr} AS REAL) = CAST(CAST({expr} AS REAL) AS INTEGER) "
+            f"THEN CAST({expr} AS REAL) * 60 ELSE CAST({expr} AS REAL) END)"
+        )
+    return (
+        f"(CASE WHEN {expr} IS NULL OR {expr} = '' THEN 0 "
+        f"WHEN CAST({expr} AS REAL) > 1000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
+    )
 
 
 def overview_data() -> dict[str, Any]:
@@ -1019,12 +1073,19 @@ def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict
     item = items.get(item_guid, {})
     username = _display_user(user, schema) or user_guid
     title = item.get("__hierarchy_title") or _display_item(item, schema) or item_guid
-    watched = _truthy(_row_value(row, fields.get("watched")))
     runtime_is_seconds = "__stream_runtime_seconds" in item
     runtime_value = item.get("__stream_runtime_seconds")
     if not runtime_is_seconds:
         runtime_value = _row_value(item, schema.items.fields.get("runtime"))
-    progress = format_play_progress(_row_value(row, fields.get("position")), runtime_value, watched, runtime_is_seconds=runtime_is_seconds)
+    position_value = _row_value(row, fields.get("position"))
+    watched = resolve_watched(
+        _row_value(row, fields.get("watched")),
+        watched_field_present=bool(fields.get("watched")),
+        position_value=position_value,
+        runtime_value=runtime_value,
+        runtime_is_seconds=runtime_is_seconds,
+    )
+    progress = format_play_progress(position_value, runtime_value, watched, runtime_is_seconds=runtime_is_seconds)
     return {
         "id": str(_row_value(row, fields.get("id")) or row.get("__rowid") or ""),
         "user_guid": user_guid,
@@ -1168,8 +1229,18 @@ def _user_order_sql(schema: FntvSchemaInfo, sort_by: str | None, sort_order: str
         "last_play_at": "stats.__recent_play",
         "last_login_at": f"u.{quote_identifier(last_login_col)}" if last_login_col else None,
     }
-    key = sort_by if sort_by in allowed and allowed[sort_by] else "username"
-    direction = "DESC" if key == sort_by and str(sort_order or "").lower() == "desc" else "ASC"
+    valid_sort = bool(sort_by in allowed and allowed[sort_by])
+    key = sort_by if valid_sort else "username"
+    default_directions = {
+        "username": "ASC",
+        "play_count": "DESC",
+        "watch_duration": "DESC",
+        "watch_seconds": "DESC",
+        "last_play_at": "DESC",
+        "last_login_at": "DESC",
+    }
+    requested_direction = str(sort_order or "").lower()
+    direction = requested_direction.upper() if valid_sort and requested_direction in {"asc", "desc"} else default_directions[key]
     expression = allowed[key] or allowed["username"]
     tie_breaker = allowed["username"] or "u.rowid"
     return f" ORDER BY {expression} {direction}, {tie_breaker} ASC"
@@ -1517,7 +1588,13 @@ def _truthy(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     if isinstance(value, str):
-        return value.lower() in {"1", "true", "yes", "y", "watched", "completed", "finished"}
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "watched", "completed", "finished"}:
+            return True
+        try:
+            return float(text) != 0
+        except ValueError:
+            return False
     return False
 
 

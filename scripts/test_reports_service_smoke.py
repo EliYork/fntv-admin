@@ -175,6 +175,41 @@ def test_distribution_and_limits(conn: sqlite3.Connection) -> None:
     assert resolutions[-1]["resolution"] == "未记录"
 
 
+def test_watched_overrides_zero_position_in_report_progress(conn: sqlite3.Connection) -> None:
+    now = int(time.time())
+    conn.execute(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, ts, watched, visible) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ("u1", "e1", now, now, 0, 1, 1),
+    )
+    data = report_service.overview(conn=conn)
+    assert data["watched_records"] == 3
+    assert data["avg_progress_percent"] is not None
+
+
+def test_report_infers_completion_only_when_watched_column_is_absent() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE user (guid TEXT PRIMARY KEY, username TEXT, visible INTEGER DEFAULT 1);
+        CREATE TABLE item (guid TEXT PRIMARY KEY, title TEXT, runtime INTEGER, visible INTEGER DEFAULT 1);
+        CREATE TABLE item_user_play (
+            user_guid TEXT, item_guid TEXT, update_time INTEGER, create_time INTEGER,
+            ts INTEGER, visible INTEGER DEFAULT 1
+        );
+        INSERT INTO user (guid, username, visible) VALUES ('u1', 'alice', 1);
+        INSERT INTO item (guid, title, runtime, visible) VALUES ('m1', '电影一', 3600, 1);
+        INSERT INTO item_user_play VALUES ('u1', 'm1', 1, 1, 1, 1);
+        INSERT INTO item_user_play VALUES ('u1', 'm1', 2, 2, 3600, 1);
+        """
+    )
+    try:
+        data = report_service.overview(conn=conn)
+        assert data["watched_records"] == 1
+    finally:
+        conn.close()
+
+
 def main() -> None:
     conn = _connect()
     try:
@@ -186,8 +221,10 @@ def main() -> None:
         test_play_trend(conn)
         test_weekly_hourly_distribution(conn)
         test_distribution_and_limits(conn)
+        test_watched_overrides_zero_position_in_report_progress(conn)
     finally:
         conn.close()
+    test_report_infers_completion_only_when_watched_column_is_absent()
     print("reports service smoke passed")
 
 

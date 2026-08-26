@@ -59,7 +59,7 @@
         <el-descriptions-item label="下次自动刷新">{{ nextAutoRefreshLabel }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.snapshot_last_attempt_at" label="上次刷新尝试">{{ new Date(status.fntv.snapshot_last_attempt_at * 1000).toLocaleString() }}</el-descriptions-item>
         <el-descriptions-item v-if="status.fntv.fallback_to_source" label="降级状态">快照不可用，已回退源库只读直连</el-descriptions-item>
-        <el-descriptions-item v-if="status.fntv.snapshot_error_message" label="快照错误">{{ status.fntv.snapshot_error_message }}</el-descriptions-item>
+        <el-descriptions-item v-if="status.fntv.snapshot_error" label="快照错误">{{ snapshotErrorLabel }}</el-descriptions-item>
       </el-descriptions>
     </div>
 
@@ -281,6 +281,7 @@ const activeDatabaseTag = computed(() => {
 
 const snapshotStatusLabel = computed(() => {
   if (!status.value?.fntv.snapshot_enabled) return '已禁用'
+  if (status.value.fntv.snapshot_refreshing) return '正在刷新'
   if (status.value.fntv.snapshot_ok) return '可用'
   if (status.value.fntv.fallback_to_source) return '失败，已回退源库'
   return '不可用'
@@ -288,9 +289,17 @@ const snapshotStatusLabel = computed(() => {
 
 const snapshotStatusTag = computed(() => {
   if (!status.value?.fntv.snapshot_enabled) return 'info'
+  if (status.value.fntv.snapshot_refreshing) return 'warning'
   if (status.value.fntv.snapshot_ok) return 'success'
   if (status.value.fntv.fallback_to_source) return 'warning'
   return 'danger'
+})
+
+const snapshotErrorLabel = computed(() => {
+  if (!status.value?.fntv.snapshot_error) return '-'
+  return status.value.fntv.fallback_to_source
+    ? '快照刷新失败，已回退源库只读直连'
+    : '快照刷新失败，请检查快照目录权限和源库可读状态'
 })
 
 const refreshIntervalLabel = computed(() => {
@@ -303,12 +312,14 @@ const refreshIntervalLabel = computed(() => {
 })
 
 const nextAutoRefreshLabel = computed(() => {
-  const last = status.value?.fntv.snapshot_last_refresh_at
-  const secs = status.value?.fntv.snapshot_refresh_interval_seconds
-  if (!status.value?.fntv.snapshot_enabled || !secs) return '-'
-  if (!last) return '尚未生成快照'
-  if (status.value.fntv.snapshot_stale) return '已过期，下次访问自动刷新'
-  return new Date((last + secs) * 1000).toLocaleString()
+  const fntv = status.value?.fntv
+  if (!fntv?.snapshot_enabled) return '-'
+  if (fntv.snapshot_schedule_state === 'manual_only') return '已关闭（仅手动刷新）'
+  if (fntv.snapshot_refreshing) return '正在刷新'
+  if (fntv.snapshot_schedule_state === 'due') return '已到期，等待自动刷新'
+  if (!fntv.snapshot_next_refresh_at) return '等待首次自动刷新'
+  const time = new Date(fntv.snapshot_next_refresh_at * 1000).toLocaleString()
+  return fntv.snapshot_schedule_state === 'retry_wait' ? `${time} 重试` : time
 })
 
 function hasCapability(key: string): boolean {
@@ -337,9 +348,11 @@ async function loadDownloads() {
 async function handleRefreshSnapshot() {
   snapshotRefreshing.value = true
   try {
-    await refreshSnapshot()
+    const result = await refreshSnapshot()
     await loadStatus()
-    ElMessage.success('快照刷新请求已完成')
+    if (result.refresh_in_progress) ElMessage.info('快照正在刷新，本次未重复启动')
+    else if (result.ok) ElMessage.success('快照刷新完成')
+    else ElMessage.warning(result.fallback_to_source ? '快照刷新失败，已使用源库' : '快照刷新失败')
   } finally {
     snapshotRefreshing.value = false
   }
@@ -359,6 +372,11 @@ function buildDiagnosticsJson(source: DatabaseStatus | null = status.value): str
       snapshot_enabled: source.fntv.snapshot_enabled ?? false,
       snapshot_ok: source.fntv.snapshot_ok ?? null,
       snapshot_last_refresh_at: source.fntv.snapshot_last_refresh_at ?? null,
+      snapshot_last_attempt_at: source.fntv.snapshot_last_attempt_at ?? null,
+      snapshot_next_refresh_at: source.fntv.snapshot_next_refresh_at ?? null,
+      snapshot_schedule_state: source.fntv.snapshot_schedule_state ?? null,
+      snapshot_refreshing: source.fntv.snapshot_refreshing ?? false,
+      snapshot_error: source.fntv.snapshot_error ?? null,
       fallback_to_source: source.fntv.fallback_to_source ?? false,
       error: source.fntv.error ?? null,
       error_type: source.fntv.error_type ?? null,

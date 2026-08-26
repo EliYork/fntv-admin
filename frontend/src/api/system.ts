@@ -45,6 +45,10 @@ export interface DatabaseStatus {
     snapshot_last_attempt_at?: number | null
     snapshot_refresh_interval_seconds?: number
     snapshot_stale?: boolean | null
+    snapshot_refreshing?: boolean
+    snapshot_retry_suppressed?: boolean
+    snapshot_next_refresh_at?: number | null
+    snapshot_schedule_state?: 'manual_only' | 'due' | 'scheduled' | 'retry_wait' | 'refreshing'
     snapshot_enabled?: boolean
     snapshot_ok: boolean | null
     snapshot_error: string | null
@@ -87,5 +91,16 @@ export function fetchDatabaseStatusDetail() {
 }
 
 export function refreshSnapshot() {
-  return postApi<Record<string, unknown>>('/system/refresh-snapshot')
+  return postApi<SnapshotRefreshResult>('/system/refresh-snapshot')
+}
+
+export interface SnapshotRefreshResult {
+  ok: boolean
+  disabled?: boolean
+  skipped?: boolean
+  started?: boolean
+  refresh_in_progress?: boolean
+  fallback_to_source?: boolean
+  message?: string
+  status?: Partial<DatabaseStatus['fntv']>
 }

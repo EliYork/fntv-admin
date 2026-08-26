@@ -13,7 +13,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'history', name: 'history', component: () => import('../views/History.vue') },
       { path: 'users', name: 'users', component: () => import('../views/Users.vue') },
       { path: 'media', name: 'media', component: () => import('../views/MediaLibrary.vue') },
-      { path: 'reports', name: 'reports', component: () => import('../views/Reports.vue') },
+      { path: 'reports', redirect: '/dashboard' },
       { path: 'tasks', redirect: '/dashboard' },
       { path: 'logs', redirect: '/dashboard' },
       { path: 'settings', name: 'settings', component: () => import('../views/SystemSettings.vue') },

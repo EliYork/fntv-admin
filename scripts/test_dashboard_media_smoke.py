@@ -131,6 +131,12 @@ def test_users_can_sort_by_play_count_desc(conn: sqlite3.Connection) -> None:
     page = adapter.users_page(1, 20, keyword=None, show_hidden=False, sort_by="play_count", sort_order="desc", conn=conn)
     assert [row["guid"] for row in page["items"]] == ["u2", "u1"]
 
+    default_direction_page = adapter.users_page(1, 20, keyword=None, show_hidden=False, sort_by="play_count", sort_order=None, conn=conn)
+    assert [row["guid"] for row in default_direction_page["items"]] == ["u2", "u1"]
+
+    username_page = adapter.users_page(1, 20, keyword=None, show_hidden=False, sort_by="username", sort_order=None, conn=conn)
+    assert [row["guid"] for row in username_page["items"]] == ["u1", "u2"]
+
 
 def test_users_sort_rejects_unlisted_field(conn: sqlite3.Connection) -> None:
     conn.executemany(
@@ -149,6 +155,39 @@ def test_runtime_normalization_treats_small_item_runtime_as_minutes(conn: sqlite
     assert progress["runtime_seconds"] == 2_640
     assert progress["progress"] == "00:21:01 / 00:44:00"
     assert progress["progress_percent"] == 47.8
+
+
+def test_explicit_watched_overrides_zero_position(conn: sqlite3.Connection) -> None:
+    progress = adapter.format_play_progress(0, 48, watched=True)
+    assert progress["position_seconds"] == 0
+    assert progress["runtime_seconds"] == 2_880
+    assert progress["progress_percent"] == 100.0
+    assert progress["progress"] == "已看完"
+    assert adapter.resolve_watched(1, watched_field_present=True, position_value=0, runtime_value=48) is True
+    assert adapter.resolve_watched(0, watched_field_present=True, position_value=1, runtime_value=1) is False
+
+
+def test_completion_is_inferred_only_without_watched_field(conn: sqlite3.Connection) -> None:
+    assert adapter.resolve_watched(None, watched_field_present=False, position_value=1, runtime_value=48) is False
+    assert adapter.resolve_watched(None, watched_field_present=False, position_value=2_880, runtime_value=48) is True
+
+
+def test_history_row_uses_explicit_watched_before_position(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.execute('ALTER TABLE item_user_play ADD COLUMN watched INTEGER')
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute('INSERT INTO item (guid, title, type, runtime) VALUES (?, ?, ?, ?)', ("m1", "电影一", "Movie", 48))
+    conn.execute(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, ts, watched, visible) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ("u1", "m1", now, now, 0, 1, 1),
+    )
+    schema = adapter.detect_schema(conn=conn)
+    raw_rows, _ = adapter._play_rows(conn, schema, 1, 20, {})
+    item = adapter._hydrate_play_rows(conn, schema, raw_rows)[0]
+    assert item["watched"] is True
+    assert item["position_seconds"] == 0
+    assert item["progress_percent"] == 100.0
+    assert item["progress"] == "已看完"
 
 
 def test_play_rows_prefer_batched_media_stream_duration(conn: sqlite3.Connection) -> None:
@@ -216,6 +255,9 @@ def main() -> None:
         test_users_can_sort_by_play_count_desc,
         test_users_sort_rejects_unlisted_field,
         test_runtime_normalization_treats_small_item_runtime_as_minutes,
+        test_explicit_watched_overrides_zero_position,
+        test_completion_is_inferred_only_without_watched_field,
+        test_history_row_uses_explicit_watched_before_position,
         test_play_rows_prefer_batched_media_stream_duration,
         test_media_stream_duration_does_not_use_item_runtime_minutes_heuristic,
         test_history_keyword_search_matches_parent_series_title,
