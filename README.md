@@ -4,6 +4,10 @@
 
 飞牛 NAS 默认推荐直接拉取 Docker Hub 成品镜像运行，不推荐在飞牛本机 build 镜像。GHCR 作为备用镜像源。
 
+## 界面预览
+
+![fntv-admin 数据中心](docs/images/dashboard.png)
+
 核心边界：
 
 - Docker Compose 是唯一官方部署入口。
