@@ -126,14 +126,14 @@ TRUST_PROXY_HEADERS=true
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.7.2
+docker.io/eliyork/fntv-admin:v0.8.0
 ```
 
 备用 GHCR 镜像地址：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.7.2
+ghcr.io/eliyork/fntv-admin:v0.8.0
 ```
 
 默认 Compose 的挂载规则：

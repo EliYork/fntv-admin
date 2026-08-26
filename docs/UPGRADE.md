@@ -12,14 +12,14 @@ docker compose up -d
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.7.2
+docker.io/eliyork/fntv-admin:v0.8.0
 ```
 
 备用 GHCR 镜像：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.7.2
+ghcr.io/eliyork/fntv-admin:v0.8.0
 ```
 
 升级不会修改飞牛影视数据库。`admin.db` 的迁移由后端启动流程处理，所有增强数据继续保存在 `/data/admin.db`。

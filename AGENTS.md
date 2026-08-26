@@ -69,14 +69,14 @@ frontend/
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.7.2
+docker.io/eliyork/fntv-admin:v0.8.0
 ```
 
 GHCR 作为备用镜像源：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.7.2
+ghcr.io/eliyork/fntv-admin:v0.8.0
 ```
 
 不要把默认镜像源改回 GHCR，不要移除 GHCR 备用发布。
@@ -474,14 +474,14 @@ volumes:
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.7.2
+docker.io/eliyork/fntv-admin:v0.8.0
 ```
 
 备用 GHCR 镜像：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.7.2
+ghcr.io/eliyork/fntv-admin:v0.8.0
 ```
 
 Docker Hub 发布需要 GitHub Secrets `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`，其中 token 必须使用 Docker Hub access token，不要使用明文密码。

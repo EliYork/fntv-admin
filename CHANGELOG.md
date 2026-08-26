@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 0.8.0 - 2026-08-26
 
 - 建立 Docker Compose-first 项目基础。
 - 增加 FastAPI 后端、Vue 前端和单容器 Dockerfile。

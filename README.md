@@ -19,7 +19,7 @@
 
 1. 复制 `docker-compose.yml` 到飞牛 NAS 的应用目录。
 
-2. 确认镜像地址。官方默认示例使用 `eliyork`：
+2. 确认镜像地址。官方默认示例使用 `docker.io/eliyork/fntv-admin:latest`：
 
 ```yaml
 services:
@@ -110,14 +110,14 @@ TRUST_PROXY_HEADERS=false
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.7.2
+docker.io/eliyork/fntv-admin:v0.8.0
 ```
 
 备用 GHCR 镜像：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.7.2
+ghcr.io/eliyork/fntv-admin:v0.8.0
 ```
 
 GitHub Actions 会在以下场景构建并推送镜像：
@@ -197,7 +197,7 @@ docker compose -f docker-compose.build.yml up -d
 - Docker Hub 为默认成品镜像源，GHCR 作为备用发布目标。
 - 启动检查、健康检查、数据库状态。
 - 首次管理员初始化、登录、退出、当前用户、修改密码。
-- 仪表盘首页采用浅蓝玻璃拟态监控面板风格，展示总览指标、最近活跃观看、播放时段、观看历史、热门内容、收藏记录和下载记录简版。
+- 后台采用单页数据中心布局，通过顶部状态栏集中展示系统状态，并提供浅色、深色主题；数据中心展示总览指标、最近活跃观看、播放时段、观看历史、热门内容、收藏记录和下载记录简版。
 - 观看历史、用户管理、媒体库基础 API 与页面。
 - 观看历史支持分页、搜索、CSV 导出和播放进度条展示；显式 `watched/completed` 完成标记优先于 position，已看完但 position 归零的记录显示“已看完”；飞牛 `item.runtime` 小整数按分钟归一化，避免 44 分钟被显示成 44 秒。
 - 用户管理支持搜索、隐藏用户和后端全量表头排序；点击标题整体切换升降序。
@@ -223,6 +223,6 @@ docker compose -f docker-compose.build.yml up -d
 
 ## License
 
-License 待补充。
+本项目采用 [MIT License](LICENSE)。
 
 第三方项目、依赖和素材版权归原作者所有，以其原项目 License 为准。
