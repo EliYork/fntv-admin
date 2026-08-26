@@ -1,25 +1,35 @@
 :root {
-  --app-bg: #f5f7fb;
-  --app-surface: #ffffff;
-  --app-sidebar-bg: #ffffff;
-  --app-surface-soft: #f9fafb;
-  --app-border: #dde3ee;
-  --app-border-soft: #edf0f5;
-  --app-text: #1f2937;
-  --app-title: #172033;
-  --app-muted: #687182;
-  --app-muted-strong: #4b5563;
-  --app-accent: #2563eb;
-  --app-bar-track: #edf1f7;
-  --app-error-bg: #fff1f2;
-  --app-error-border: #f5c2c7;
-  --app-error-text: #b42318;
+  --app-bg: #f2f2ee;
+  --app-surface: #fbfbf8;
+  --app-sidebar-bg: #fbfbf8;
+  --app-surface-soft: #f0f0eb;
+  --app-surface-strong: #e6e6df;
+  --app-row-hover: rgba(187, 75, 47, 0.045);
+  --app-border: #d9d9d1;
+  --app-border-soft: #e6e6df;
+  --app-text: #3b3f3c;
+  --app-title: #1f2321;
+  --app-muted: #747a75;
+  --app-muted-strong: #555b57;
+  --app-accent: #b74d32;
+  --app-on-accent: #ffffff;
+  --app-success: #3c7a57;
+  --app-danger: #b33e3e;
+  --app-bar-track: #e4e4dd;
+  --app-data-0: #e8e6df;
+  --app-data-1: #dec2b9;
+  --app-data-2: #cf917e;
+  --app-data-3: #bd6248;
+  --app-data-4: #843c2a;
+  --app-error-bg: #f8e9e5;
+  --app-error-border: #e7bbb0;
+  --app-error-text: #913523;
   color: var(--app-text);
   background: var(--app-bg);
-  font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   letter-spacing: 0;
-  --el-color-primary: #2563eb;
+  --el-color-primary: #b74d32;
 }
 
 * {
@@ -41,26 +51,36 @@ body {
 
 [data-theme='dark'] {
   color-scheme: dark;
-  --app-bg: #101418;
-  --app-surface: #171c22;
-  --app-sidebar-bg: #141a20;
-  --app-surface-soft: #1d242c;
-  --app-border: #2c3540;
-  --app-border-soft: #26303a;
-  --app-text: #d8dee6;
-  --app-title: #f4f7fb;
-  --app-muted: #9aa5b1;
-  --app-muted-strong: #c3ccd6;
-  --app-accent: #6ea8fe;
-  --app-bar-track: #26303a;
-  --app-error-bg: #391f24;
-  --app-error-border: #7f333d;
-  --app-error-text: #ffb4bd;
+  --app-bg: #141715;
+  --app-surface: #1c201d;
+  --app-sidebar-bg: #1c201d;
+  --app-surface-soft: #252925;
+  --app-surface-strong: #30352f;
+  --app-row-hover: rgba(224, 122, 95, 0.075);
+  --app-border: #3c413c;
+  --app-border-soft: #2f342f;
+  --app-text: #d8dcd7;
+  --app-title: #f1f3ef;
+  --app-muted: #9ba29b;
+  --app-muted-strong: #bcc2bc;
+  --app-accent: #e07a5f;
+  --app-on-accent: #171918;
+  --app-success: #75b68e;
+  --app-danger: #ef8585;
+  --app-bar-track: #30352f;
+  --app-data-0: #292e2a;
+  --app-data-1: #563d36;
+  --app-data-2: #875241;
+  --app-data-3: #bd684f;
+  --app-data-4: #f09a7e;
+  --app-error-bg: #3a2420;
+  --app-error-border: #75483e;
+  --app-error-text: #f1a38e;
   --el-bg-color: var(--app-surface);
   --el-bg-color-overlay: #1d242c;
   --el-fill-color-blank: var(--app-surface);
-  --el-fill-color-light: #202832;
-  --el-fill-color: #252e38;
+  --el-fill-color-light: #252925;
+  --el-fill-color: #30352f;
   --el-border-color: var(--app-border);
   --el-border-color-light: var(--app-border-soft);
   --el-text-color-primary: var(--app-title);
@@ -69,14 +89,37 @@ body {
   --el-menu-bg-color: var(--app-sidebar-bg);
   --el-menu-text-color: var(--app-text);
   --el-menu-active-color: var(--app-accent);
-  --el-menu-hover-bg-color: #202832;
-  --el-table-header-bg-color: #1d242c;
+  --el-menu-hover-bg-color: #252925;
+  --el-table-header-bg-color: #252925;
+  --el-color-primary: #e07a5f;
   color: var(--app-text);
   background: var(--app-bg);
 }
 
 [data-theme='dark'] body {
-  background: #111827;
+  background: var(--app-bg);
+}
+
+a,
+button,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .page-header {
@@ -228,15 +271,26 @@ body {
   color: var(--app-text);
 }
 
-[data-theme='dark'] .el-button:not(.el-button--primary) {
+[data-theme='dark'] .el-button:not(.el-button--primary):not(.is-text) {
   background-color: var(--app-surface-soft);
   border-color: var(--app-border);
   color: var(--app-text);
 }
 
-[data-theme='dark'] .el-button:not(.el-button--primary):hover {
+[data-theme='dark'] .el-button:not(.el-button--primary):not(.is-text):hover {
   border-color: var(--app-accent);
   color: var(--app-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 @media (max-width: 900px) {

@@ -1,774 +1,281 @@
 <template>
-  <section class="dashboard-monitor-page">
-    <div class="monitor-shell">
-      <header class="page-header monitor-topbar">
-        <div>
-          <h1 class="page-title">仪表盘</h1>
-          <p class="page-subtitle">飞牛影视数据概览和近期播放活动</p>
-        </div>
-        <div class="monitor-actions">
-          <span v-if="lastUpdatedAt" class="updated-at">更新于 {{ lastUpdatedAt }}</span>
-          <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
-        </div>
-      </header>
-
-      <div v-if="overview?.error" class="monitor-error">{{ overview.error }}</div>
-      <div v-if="sectionErrors.overview" class="monitor-error">{{ sectionErrors.overview }}</div>
-
-      <section class="monitor-stats">
-        <article v-for="item in metricCards" :key="item.label" class="glass-card stat-card">
-          <span class="stat-accent"></span>
-          <span class="stat-label">{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-          <span class="stat-note">{{ item.note }}</span>
-        </article>
-      </section>
-
-      <section class="monitor-grid">
-        <article class="glass-card monitor-card trend-card">
-          <PanelHead title="播放趋势" note="最近一年播放活跃度，颜色越深播放越多。" />
-          <div class="card-body">
-            <InlineError v-if="sectionErrors.trend" :message="sectionErrors.trend" />
-            <PlaybackHeatmap v-if="trendItems.length" :date-items="trendItems" :modes="['date']" />
-            <EmptyState v-else description="暂无播放趋势数据" />
-          </div>
-        </article>
-      </section>
-
-      <section class="monitor-grid two-columns">
-        <article class="glass-card monitor-card">
-          <PanelHead title="播放时段" note="按最近 30 天播放记录聚合，使用本地时区。" />
-          <div class="card-body">
-            <InlineError v-if="sectionErrors.hourly" :message="sectionErrors.hourly" />
-            <div v-if="hourlyItems.length" class="hour-bars">
-              <div v-for="item in hourlyItems" :key="item.hour" class="hour-bar-row">
-                <span class="hour-label">{{ item.label }}</span>
-                <div class="hour-track">
-                  <span :style="{ width: `${barWidth(item.play_count, hourlyMax)}%` }"></span>
-                </div>
-                <span class="hour-count">{{ item.play_count }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无播放时段数据" />
-          </div>
-        </article>
-
-        <article class="glass-card monitor-card">
-          <PanelHead title="媒体类型分布" note="媒体类型统计" />
-          <div class="card-body">
-            <InlineError v-if="sectionErrors.mediaTypes" :message="sectionErrors.mediaTypes" />
-            <div v-if="mediaTypeItems.length" class="hour-bars">
-              <div v-for="row in mediaTypeItems" :key="row.type" class="hour-bar-row">
-                <span class="hour-label">{{ row.type || '未知' }}</span>
-                <div class="hour-track">
-                  <span :style="{ width: `${barWidth(row.count, mediaTypeMax)}%` }"></span>
-                </div>
-                <span class="hour-count">{{ row.count }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无媒体类型数据" />
-          </div>
-        </article>
-      </section>
-
-      <section class="monitor-grid two-columns">
-        <article class="glass-card monitor-card">
-          <PanelHead title="活跃用户榜" note="最近 30 天播放排行" />
-          <div class="card-body">
-            <InlineError v-if="sectionErrors.topUsers" :message="sectionErrors.topUsers" />
-            <div v-if="topUserItems.length" class="rank-list">
-              <div v-for="(item, index) in topUserItems" :key="item.user_guid || item.username" class="glass-list-item rank-item">
-                <div class="rank-title">
-                  <strong>{{ index + 1 }}. {{ item.username || item.user_guid || '-' }}</strong>
-                  <span>播放 {{ item.play_count }} 次 · 看完 {{ item.watched_count }} 次</span>
-                </div>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无活跃用户数据" />
-          </div>
-        </article>
-
-        <article class="glass-card monitor-card">
-          <PanelHead title="分辨率分布" note="最近 30 天播放记录" />
-          <div class="card-body">
-            <InlineError v-if="sectionErrors.resolutions" :message="sectionErrors.resolutions" />
-            <div v-if="resolutionItems.length" class="hour-bars">
-              <div v-for="row in resolutionItems" :key="row.resolution" class="hour-bar-row">
-                <span class="hour-label" :class="{ 'muted-label': row.resolution === '未记录' }">{{ row.resolution || '未记录' }}</span>
-                <div class="hour-track">
-                  <span :style="{ width: `${barWidth(row.play_count, resolutionMax)}%` }"></span>
-                </div>
-                <span class="hour-count">{{ row.play_count }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无分辨率数据" />
-          </div>
-        </article>
-      </section>
-
-      <section class="monitor-grid two-columns">
-        <article class="glass-card monitor-card history-card">
-          <PanelHead title="观看历史" note="最近播放记录简版" />
-          <div class="card-body scroll-panel">
-            <InlineError v-if="sectionErrors.history" :message="sectionErrors.history" />
-            <div v-if="activities.length" class="history-table">
-              <div class="history-row header-row">
-                <span>用户</span>
-                <span>内容</span>
-                <span>类型</span>
-                <span>进度</span>
-                <span>时间</span>
-              </div>
-              <div v-for="item in activities" :key="item.id || `${item.user_guid}-${item.item_guid}-${item.played_at}`" class="history-row">
-                <span class="text-ellipsis">{{ item.username || item.user || '-' }}</span>
-                <span class="text-ellipsis title-cell" :title="item.display_title || item.title">{{ item.display_title || item.title || '-' }}</span>
-                <span><em class="type-tag">{{ historyType(item) }}</em></span>
-                <span>
-                  <i class="mini-progress"><b :style="{ width: `${progressWidth(item)}%` }"></b></i>
-                </span>
-                <span class="muted text-ellipsis">{{ item.played_at || item.started_at || '-' }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无播放活动或未识别播放记录表" />
-          </div>
-        </article>
-
-        <article class="glass-card monitor-card">
-          <PanelHead title="热门内容" note="最近 7 天热门内容" />
-          <div class="card-body">
-            <InlineError v-if="sectionErrors.topMedia" :message="sectionErrors.topMedia" />
-            <div v-if="topMediaItems.length" class="rank-list">
-              <div v-for="(item, index) in topMediaItems" :key="item.item_guid || item.title" class="glass-list-item rank-item">
-                <div class="rank-title">
-                  <strong>{{ index + 1 }}. {{ item.title || item.item_guid || '-' }}</strong>
-                  <span>{{ item.parent_title || '近7天播放' }}</span>
-                </div>
-                <span class="count-badge">{{ item.play_count }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无热门内容数据" />
-          </div>
-        </article>
-      </section>
-
-      <section class="monitor-grid two-columns">
-        <article class="glass-card monitor-card">
-          <PanelHead title="收藏记录" note="最近收藏媒体" />
-          <div class="card-body compact-list">
-            <InlineError v-if="sectionErrors.favorites" :message="sectionErrors.favorites" />
-            <div v-if="favoriteItems.length" class="simple-list">
-              <div v-for="item in favoriteItems" :key="`${item.user_guid}-${item.item_guid}-${item.favorite_time}`" class="glass-list-item">
-                <div class="item-main">
-                  <strong>{{ item.title || item.item_guid || '-' }}</strong>
-                  <span>{{ item.username || item.user_guid || '-' }} · {{ item.media_type || '未知' }}</span>
-                </div>
-                <span class="muted">{{ item.favorite_time || '-' }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无收藏" />
-          </div>
-        </article>
-
-        <article class="glass-card monitor-card">
-          <PanelHead title="下载记录" note="最近下载任务" />
-          <div class="card-body compact-list">
-            <InlineError v-if="sectionErrors.downloads" :message="sectionErrors.downloads" />
-            <div v-if="downloadItems.length" class="simple-list">
-              <div v-for="item in downloadItems" :key="`${item.user_guid}-${item.media_file}-${item.create_time}`" class="glass-list-item">
-                <div class="item-main">
-                  <strong>{{ item.media_file || item.output_file || '-' }}</strong>
-                  <span>{{ item.username || item.user_guid || '-' }} · {{ item.resolution || item.status_text || '未知' }}</span>
-                </div>
-                <span class="muted">{{ item.update_time || item.create_time || '-' }}</span>
-              </div>
-            </div>
-            <EmptyState v-else description="暂无下载" />
-          </div>
-        </article>
-      </section>
+  <section class="observatory-page">
+    <h1 class="sr-only">飞牛影视数据中心</h1>
+    <div v-if="overview?.error || sectionErrors.overview" class="section-error" role="alert">
+      {{ overview?.error || sectionErrors.overview }}
     </div>
+
+    <section class="metric-strip" aria-label="核心指标">
+      <article v-for="metric in metricCards" :key="metric.label" class="metric-item">
+        <span>{{ metric.label }}</span>
+        <strong>{{ metric.value }}</strong>
+        <small>{{ metric.note }}</small>
+      </article>
+    </section>
+
+    <section class="data-section trend-section" aria-labelledby="trend-title">
+      <header class="section-heading">
+        <h2 id="trend-title">播放趋势</h2>
+        <el-radio-group v-model="trendRange" size="small" aria-label="播放趋势时间范围" @change="loadTrend">
+          <el-radio-button :value="30">30 天</el-radio-button>
+          <el-radio-button :value="90">90 天</el-radio-button>
+          <el-radio-button :value="365">1 年</el-radio-button>
+        </el-radio-group>
+      </header>
+      <InlineError v-if="sectionErrors.trend" :message="sectionErrors.trend" />
+      <PlaybackHeatmap v-if="trendItems.length" :date-items="trendItems" :modes="['date']" />
+      <EmptyState v-else-if="!loading" description="暂无播放趋势数据" />
+    </section>
+
+    <section class="data-section" aria-labelledby="hourly-title">
+      <header class="section-heading"><h2 id="hourly-title">播放时段</h2></header>
+      <InlineError v-if="sectionErrors.hourly" :message="sectionErrors.hourly" />
+      <div v-if="hasHourlyData" class="hourly-scroll">
+        <div class="hourly-chart" role="img" aria-label="最近 30 天各小时播放次数柱状图">
+          <el-tooltip v-for="item in normalizedHourlyItems" :key="item.hour" :content="`${hourLabel(item.hour)} · ${item.play_count} 次播放`" placement="top">
+            <div class="hour-column" :aria-label="`${item.hour} 点播放 ${item.play_count} 次`">
+              <div class="hour-bar-zone">
+                <span class="hour-bar" :style="{ height: `${hourBarHeight(item.play_count)}%` }"></span>
+              </div>
+              <span class="hour-tick">{{ visibleHourTick(item.hour) }}</span>
+            </div>
+          </el-tooltip>
+        </div>
+      </div>
+      <EmptyState v-else-if="!loading" description="暂无播放时段数据" />
+    </section>
+
+    <section class="rank-grid">
+      <article class="rank-panel" aria-labelledby="media-rank-title">
+        <header class="section-heading"><h2 id="media-rank-title">热门内容</h2></header>
+        <InlineError v-if="sectionErrors.topMedia" :message="sectionErrors.topMedia" />
+        <ol v-if="topMediaItems.length" class="rank-list">
+          <li v-for="(item, index) in topMediaItems" :key="item.item_guid || `${item.title}-${index}`">
+            <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="rank-content">
+              <strong>{{ item.title || item.item_guid || '未命名媒体' }}</strong>
+              <small v-if="item.parent_title">{{ item.parent_title }}</small>
+            </span>
+            <span class="rank-value">{{ item.play_count }}<small>次</small></span>
+          </li>
+        </ol>
+        <EmptyState v-else-if="!loading" description="暂无热门内容数据" />
+      </article>
+
+      <article class="rank-panel" aria-labelledby="user-rank-title">
+        <header class="section-heading"><h2 id="user-rank-title">活跃用户</h2></header>
+        <InlineError v-if="sectionErrors.topUsers" :message="sectionErrors.topUsers" />
+        <ol v-if="topUserItems.length" class="rank-list">
+          <li v-for="(item, index) in topUserItems" :key="item.user_guid || `${item.username}-${index}`">
+            <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="rank-content">
+              <strong>{{ item.username || item.user_guid || '未知用户' }}</strong>
+              <small v-if="item.watch_seconds">{{ formatWatchDuration(item.watch_seconds) }}</small>
+            </span>
+            <span class="rank-value">{{ item.play_count }}<small>次</small></span>
+          </li>
+        </ol>
+        <EmptyState v-else-if="!loading" description="暂无活跃用户数据" />
+      </article>
+    </section>
+
+    <HistoryFeed ref="historyFeed" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
 import {
   fetchDashboardOverview,
-  fetchDownloads,
-  fetchFavorites,
-  fetchRecentActivities,
   fetchReportHourlyDistribution,
-  fetchReportMediaTypeDistribution,
   fetchReportOverview,
   fetchReportPlayTrend,
-  fetchReportResolutionDistribution,
   fetchReportTopMedia,
   fetchReportTopUsers,
   type DashboardOverview,
-  type DownloadItem,
-  type FavoriteItem,
-  type HistoryItem,
   type HourlyDistributionItem,
-  type MediaTypeDistributionItem,
   type PlayTrendItem,
   type ReportOverview,
-  type ResolutionDistributionItem,
   type TopMediaReportItem,
   type TopUserReportItem
 } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
+import HistoryFeed from '../components/HistoryFeed.vue'
 import PlaybackHeatmap from '../components/PlaybackHeatmap.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
-const PanelHead = defineComponent({
-  props: {
-    title: { type: String, required: true },
-    note: { type: String, default: '' }
-  },
-  setup(props) {
-    return () =>
-      h('div', { class: 'panel-head' }, [
-        h('strong', props.title),
-        props.note ? h('span', props.note) : null
-      ])
-  }
-})
-
 const InlineError = defineComponent({
-  props: {
-    message: { type: String, required: true }
-  },
+  props: { message: { type: String, required: true } },
   setup(props) {
-    return () => h('div', { class: 'inline-error' }, props.message)
+    return () => h('div', { class: 'inline-error', role: 'alert' }, props.message)
   }
 })
 
 const overview = ref<DashboardOverview | null>(null)
 const reportOverview = ref<ReportOverview | null>(null)
-const activities = ref<HistoryItem[]>([])
 const hourlyItems = ref<HourlyDistributionItem[]>([])
 const topMediaItems = ref<TopMediaReportItem[]>([])
-const favoriteItems = ref<FavoriteItem[]>([])
-const downloadItems = ref<DownloadItem[]>([])
 const trendItems = ref<PlayTrendItem[]>([])
-const mediaTypeItems = ref<MediaTypeDistributionItem[]>([])
 const topUserItems = ref<TopUserReportItem[]>([])
-const resolutionItems = ref<ResolutionDistributionItem[]>([])
-const lastUpdatedAt = ref('')
+const trendRange = ref<30 | 90 | 365>(365)
 const loading = ref(false)
+const historyFeed = ref<InstanceType<typeof HistoryFeed> | null>(null)
 
-const sectionErrors = reactive({
-  overview: '',
-  history: '',
-  hourly: '',
-  topMedia: '',
-  favorites: '',
-  downloads: '',
-  trend: '',
-  mediaTypes: '',
-  topUsers: '',
-  resolutions: ''
-})
+const sectionErrors = reactive({ overview: '', hourly: '', topMedia: '', trend: '', topUsers: '' })
 
 const metricCards = computed(() => [
-  {
-    label: '总用户数',
-    value: formatNumber(reportOverview.value?.total_users ?? overview.value?.total_users),
-    note: '飞牛用户'
-  },
-  {
-    label: '活跃用户',
-    value: formatNumber(reportOverview.value?.active_users_7d),
-    note: '最近 7 天'
-  },
-  {
-    label: '今日播放',
-    value: formatNumber(overview.value?.today_plays),
-    note: '本地日期'
-  },
-  {
-    label: '播放记录',
-    value: formatNumber(reportOverview.value?.total_play_records ?? overview.value?.total_play_records),
-    note: '累计只读统计'
-  }
+  { label: '总用户', value: formatNumber(reportOverview.value?.total_users ?? overview.value?.total_users), note: '全部用户' },
+  { label: '活跃用户', value: formatNumber(reportOverview.value?.active_users_7d), note: '最近 7 天' },
+  { label: '今日播放', value: formatNumber(overview.value?.today_plays), note: '本地日期' },
+  { label: '播放记录', value: formatNumber(reportOverview.value?.total_play_records ?? overview.value?.total_play_records), note: '累计记录' }
 ])
+
+const normalizedHourlyItems = computed<HourlyDistributionItem[]>(() => {
+  const byHour = new Map(hourlyItems.value.map((item) => [item.hour, item]))
+  return Array.from({ length: 24 }, (_, hour) => byHour.get(hour) || { hour, label: hourLabel(hour), play_count: 0 })
+})
+
+const hourlyMax = computed(() => normalizedHourlyItems.value.reduce((max, item) => Math.max(max, item.play_count), 0))
+const hasHourlyData = computed(() => normalizedHourlyItems.value.some((item) => item.play_count > 0))
 
 async function loadData() {
   loading.value = true
   clearErrors()
+  const [dashboard, report, hourly, topMedia, topUsers, trend] = await Promise.allSettled([
+    fetchDashboardOverview(),
+    fetchReportOverview(),
+    fetchReportHourlyDistribution(30),
+    fetchReportTopMedia({ days: '7', limit: 8, mode: 'series' }),
+    fetchReportTopUsers({ days: '30', limit: 5 }),
+    fetchReportPlayTrend(trendRange.value)
+  ])
+
+  if (dashboard.status === 'fulfilled') overview.value = dashboard.value
+  else sectionErrors.overview = errorMessage(dashboard.reason, '核心指标加载失败')
+
+  if (report.status === 'fulfilled') reportOverview.value = report.value
+  else sectionErrors.overview ||= errorMessage(report.reason, '核心指标加载失败')
+
+  if (hourly.status === 'fulfilled') hourlyItems.value = hourly.value
+  else sectionErrors.hourly = errorMessage(hourly.reason, '播放时段加载失败')
+
+  if (topMedia.status === 'fulfilled') topMediaItems.value = topMedia.value
+  else sectionErrors.topMedia = errorMessage(topMedia.reason, '热门内容加载失败')
+
+  if (topUsers.status === 'fulfilled') topUserItems.value = topUsers.value
+  else sectionErrors.topUsers = errorMessage(topUsers.reason, '活跃用户加载失败')
+
+  if (trend.status === 'fulfilled') trendItems.value = trend.value
+  else sectionErrors.trend = errorMessage(trend.reason, '播放趋势加载失败')
+  loading.value = false
+}
+
+async function loadTrend() {
+  sectionErrors.trend = ''
   try {
-    const [dashboard, report, recent, hourly, topMedia, favorites, downloads, trend, mediaTypes, topUsers, resolutions] = await Promise.allSettled([
-      fetchDashboardOverview(),
-      fetchReportOverview(),
-      fetchRecentActivities(30),
-      fetchReportHourlyDistribution(30),
-      fetchReportTopMedia({ days: '7', limit: 10, mode: 'series' }),
-      fetchFavorites({ page: 1, page_size: 5 }),
-      fetchDownloads({ page: 1, page_size: 5 }),
-      fetchReportPlayTrend(365),
-      fetchReportMediaTypeDistribution(),
-      fetchReportTopUsers({ days: '30', limit: 5 }),
-      fetchReportResolutionDistribution('30')
-    ])
-
-    if (dashboard.status === 'fulfilled') overview.value = dashboard.value
-    else sectionErrors.overview = errorMessage(dashboard.reason, '仪表盘概览加载失败')
-
-    if (report.status === 'fulfilled') reportOverview.value = report.value
-    else sectionErrors.overview = sectionErrors.overview || errorMessage(report.reason, '报表概览加载失败')
-
-    if (trend.status === 'fulfilled') trendItems.value = trend.value
-    else sectionErrors.trend = errorMessage(trend.reason, '播放趋势加载失败')
-
-    if (mediaTypes.status === 'fulfilled') mediaTypeItems.value = mediaTypes.value
-    else sectionErrors.mediaTypes = errorMessage(mediaTypes.reason, '媒体类型分布加载失败')
-
-    if (topUsers.status === 'fulfilled') topUserItems.value = topUsers.value
-    else sectionErrors.topUsers = errorMessage(topUsers.reason, '活跃用户榜加载失败')
-
-    if (resolutions.status === 'fulfilled') resolutionItems.value = resolutions.value
-    else sectionErrors.resolutions = errorMessage(resolutions.reason, '分辨率分布加载失败')
-
-    if (recent.status === 'fulfilled') activities.value = recent.value
-    else sectionErrors.history = errorMessage(recent.reason, '观看历史加载失败')
-
-    if (hourly.status === 'fulfilled') hourlyItems.value = hourly.value
-    else sectionErrors.hourly = errorMessage(hourly.reason, '播放时段加载失败')
-
-    if (topMedia.status === 'fulfilled') topMediaItems.value = topMedia.value
-    else sectionErrors.topMedia = errorMessage(topMedia.reason, '热门内容加载失败')
-
-    if (favorites.status === 'fulfilled') favoriteItems.value = favorites.value.items || []
-    else sectionErrors.favorites = errorMessage(favorites.reason, '收藏记录加载失败')
-
-    if (downloads.status === 'fulfilled') downloadItems.value = downloads.value.items || []
-    else sectionErrors.downloads = errorMessage(downloads.reason, '下载记录加载失败')
-    lastUpdatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' })
-  } finally {
-    loading.value = false
+    trendItems.value = await fetchReportPlayTrend(trendRange.value)
+  } catch (error) {
+    sectionErrors.trend = errorMessage(error, '播放趋势加载失败')
   }
+}
+
+async function refreshPage() {
+  await Promise.all([loadData(), historyFeed.value?.refresh()])
 }
 
 function clearErrors() {
-  for (const key of Object.keys(sectionErrors) as Array<keyof typeof sectionErrors>) {
-    sectionErrors[key] = ''
-  }
+  for (const key of Object.keys(sectionErrors) as Array<keyof typeof sectionErrors>) sectionErrors[key] = ''
 }
 
 function formatNumber(value: number | null | undefined): string {
-  return value == null ? '-' : value.toLocaleString('zh-CN')
+  return value == null ? '—' : value.toLocaleString('zh-CN')
 }
 
-function barWidth(value: number, max: number): number {
-  if (max <= 0 || value <= 0) return 0
-  return Math.max(6, Math.round((value / max) * 100))
+function hourBarHeight(value: number): number {
+  if (value <= 0 || hourlyMax.value <= 0) return 2
+  return Math.max(8, Math.round((value / hourlyMax.value) * 100))
 }
 
-const hourlyMax = computed(() => hourlyItems.value.reduce((max, item) => Math.max(max, item.play_count), 0))
-const mediaTypeMax = computed(() => mediaTypeItems.value.reduce((max, item) => Math.max(max, item.count), 0))
-const resolutionMax = computed(() => resolutionItems.value.reduce((max, item) => Math.max(max, item.play_count), 0))
-
-function historyType(item: HistoryItem): string {
-  return item.resolution || item.watched_text || '记录'
+function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`
 }
 
-function progressWidth(item: HistoryItem): number {
-  if (item.progress_percent != null) return Math.max(0, Math.min(100, item.progress_percent))
-  if (item.watched) return 100
-  return 0
+function visibleHourTick(hour: number): string {
+  return [0, 3, 6, 9, 12, 15, 18, 21, 23].includes(hour) ? String(hour) : ''
+}
+
+function formatWatchDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours > 0) return `${hours} 小时 ${minutes} 分钟`
+  return `${minutes} 分钟`
 }
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-onMounted(() => {
-  loadData()
-})
-
-useRouteRefresh(loadData)
+onMounted(loadData)
+useRouteRefresh(refreshPage)
 </script>
 
 <style scoped>
-.dashboard-monitor-page {
-  --monitor-ink: var(--app-title);
-  --monitor-muted: var(--app-muted);
-  --monitor-accent: var(--app-accent);
-  --monitor-border: var(--app-border);
-  --monitor-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
-  color: var(--monitor-ink);
-}
+.observatory-page { display: grid; gap: clamp(34px, 4vw, 58px); min-width: 0; color: var(--app-text); }
+.metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--app-border); border-bottom: 1px solid var(--app-border); }
 
-.monitor-shell {
+.metric-item {
   display: grid;
-  gap: 16px;
-  width: 100%;
+  align-content: center;
+  min-height: 132px;
+  padding: 22px clamp(16px, 2.2vw, 30px);
+  border-right: 1px solid var(--app-border-soft);
 }
 
-.monitor-topbar,
-.monitor-stats,
-.monitor-grid {
-  min-width: 0;
+.metric-item:last-child { border-right: 0; }
+.metric-item span, .metric-item small { color: var(--app-muted); }
+.metric-item span { font-size: 12px; font-weight: 620; letter-spacing: 0.04em; }
+.metric-item strong { margin: 9px 0 7px; color: var(--app-title); font-size: clamp(30px, 3.3vw, 46px); font-weight: 620; letter-spacing: -0.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+.metric-item small { font-size: 11px; }
+.data-section, .rank-panel { min-width: 0; }
+.data-section { display: grid; gap: 20px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 32px; }
+.section-heading h2 { margin: 0; color: var(--app-title); font-size: clamp(17px, 1.5vw, 20px); font-weight: 660; letter-spacing: -0.015em; }
+.trend-section { padding-top: 2px; }
+
+.hourly-scroll { overflow-x: auto; overflow-y: hidden; padding: 3px 0 2px; }
+.hourly-chart { display: grid; grid-template-columns: repeat(24, minmax(18px, 1fr)); gap: clamp(4px, 0.7vw, 11px); min-width: 620px; height: 132px; padding-top: 8px; }
+.hour-column { display: grid; grid-template-rows: 104px 20px; gap: 7px; min-width: 0; cursor: default; }
+.hour-bar-zone { display: flex; align-items: flex-end; justify-content: center; height: 104px; border-bottom: 1px solid var(--app-border); }
+.hour-bar { width: min(70%, 18px); min-height: 2px; border-radius: 3px 3px 1px 1px; background: var(--app-accent); opacity: 0.82; transition: opacity 160ms ease; }
+.hour-column:hover .hour-bar { opacity: 1; }
+.hour-tick { color: var(--app-muted); font-size: 10px; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.rank-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr); gap: clamp(34px, 5vw, 76px); }
+.rank-panel { display: grid; align-content: start; gap: 15px; }
+.rank-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--app-border-soft); }
+.rank-list li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 58px; padding: 8px 4px; border-bottom: 1px solid var(--app-border-soft); }
+.rank-index { color: var(--app-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.rank-content { display: grid; gap: 2px; min-width: 0; }
+.rank-content strong { overflow: hidden; color: var(--app-title); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.rank-content small { overflow: hidden; color: var(--app-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.rank-value { color: var(--app-title); font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.rank-value small { margin-left: 3px; color: var(--app-muted); font-size: 10px; font-weight: 500; }
+.inline-error, .section-error { padding: 10px 12px; border: 1px solid var(--app-error-border); border-radius: 8px; background: var(--app-error-bg); color: var(--app-error-text); font-size: 12px; }
+.observatory-page :deep(.empty-panel) { padding: 32px 12px; }
+
+@media (max-width: 900px) {
+  .metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric-item:nth-child(2) { border-right: 0; }
+  .metric-item:nth-child(-n + 2) { border-bottom: 1px solid var(--app-border-soft); }
+  .rank-grid { grid-template-columns: 1fr; gap: 38px; }
 }
 
-.monitor-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.monitor-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.updated-at {
-  color: var(--monitor-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.glass-card,
-.monitor-actions :deep(.el-button) {
-  border: 1px solid var(--monitor-border);
-  background: var(--app-surface);
-  box-shadow: var(--monitor-shadow);
-}
-
-.glass-card {
-  overflow: hidden;
-  border-radius: 10px;
-}
-
-.monitor-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.stat-card {
-  display: grid;
-  gap: 6px;
-  min-height: 116px;
-  padding: 18px;
-}
-
-.stat-accent {
-  width: 30px;
-  height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--monitor-accent), rgba(47, 123, 255, 0.18));
-}
-
-.stat-label,
-.stat-note,
-.muted {
-  color: var(--monitor-muted);
-}
-
-.stat-label {
-  font-size: 13px;
-}
-
-.stat-card strong {
-  color: var(--monitor-ink);
-  font-size: 28px;
-  line-height: 1.1;
-}
-
-.stat-note {
-  font-size: 12px;
-}
-
-.monitor-grid {
-  display: grid;
-  gap: 16px;
-}
-
-.two-columns {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.95fr);
-}
-
-.monitor-card {
-  min-height: 282px;
-}
-
-.trend-card {
-  min-height: auto;
-}
-
-.panel-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px 0;
-}
-
-.panel-head strong {
-  color: var(--monitor-ink);
-  font-size: 15px;
-  font-weight: 720;
-}
-
-.panel-head span {
-  color: var(--monitor-muted);
-  font-size: 12px;
-  text-align: right;
-}
-
-.card-body {
-  padding: 16px 18px 18px;
-}
-
-.rank-list,
-.simple-list {
-  display: grid;
-  gap: 10px;
-}
-
-.compact-list {
-  min-height: 160px;
-}
-
-.glass-list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid var(--app-border-soft);
-  border-radius: 8px;
-  background: var(--app-surface-soft);
-}
-
-.item-main,
-.rank-title {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.item-main strong,
-.rank-title strong {
-  overflow: hidden;
-  color: var(--monitor-ink);
-  font-size: 13px;
-  font-style: normal;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.item-main span,
-.rank-title span {
-  overflow: hidden;
-  color: var(--monitor-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hour-bars {
-  display: grid;
-  gap: 7px;
-}
-
-.hour-bar-row {
-  display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) 36px;
-  align-items: center;
-  gap: 10px;
-  min-height: 20px;
-}
-
-.hour-label,
-.hour-count {
-  color: var(--monitor-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.muted-label {
-  color: var(--monitor-muted);
-}
-
-.hour-count {
-  text-align: right;
-}
-
-.hour-track,
-.mini-progress {
-  display: block;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--app-bar-track);
-}
-
-.hour-track {
-  height: 9px;
-}
-
-.hour-track span,
-.mini-progress b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #6fb0ff, var(--monitor-accent));
-}
-
-.scroll-panel {
-  max-height: 430px;
-  overflow: auto;
-}
-
-.history-table {
-  min-width: 560px;
-}
-
-.history-row {
-  display: grid;
-  grid-template-columns: minmax(70px, 0.8fr) minmax(150px, 1.9fr) 74px minmax(86px, 0.8fr) minmax(120px, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--app-border-soft);
-  color: var(--monitor-ink);
-  font-size: 13px;
-}
-
-.header-row {
-  color: var(--monitor-muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.text-ellipsis {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.title-cell {
-  color: var(--monitor-ink);
-  font-weight: 620;
-}
-
-.type-tag {
-  display: inline-flex;
-  max-width: 70px;
-  overflow: hidden;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(47, 123, 255, 0.12);
-  color: var(--monitor-accent);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mini-progress {
-  width: 100%;
-  height: 6px;
-}
-
-.count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 760;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 45%),
-    linear-gradient(135deg, #cfd6e2 0%, #99a5b8 58%, #7f899a 100%);
-  box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.3);
-}
-
-.inline-error,
-.monitor-error {
-  margin-bottom: 10px;
-  padding: 9px 12px;
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  border-radius: 12px;
-  background: rgba(255, 247, 237, 0.72);
-  color: #9a3412;
-  font-size: 13px;
-}
-
-.monitor-error {
-  margin-bottom: 0;
-}
-
-.dashboard-monitor-page :deep(.empty-panel) {
-  padding: 28px 10px;
-  color: var(--monitor-muted);
-}
-
-:global([data-theme='dark']) .dashboard-monitor-page {
-  --monitor-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-}
-
-:global([data-theme='dark']) .glass-list-item {
-  border-color: var(--app-border-soft);
-  background: var(--app-surface-soft);
-}
-
-:global([data-theme='dark']) .hour-track,
-:global([data-theme='dark']) .mini-progress {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-:global([data-theme='dark']) .inline-error,
-:global([data-theme='dark']) .monitor-error {
-  border-color: rgba(251, 146, 60, 0.35);
-  background: rgba(67, 39, 18, 0.58);
-  color: #fdba74;
-}
-
-@media (max-width: 980px) {
-  .monitor-stats,
-  .two-columns {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .two-columns {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 680px) {
-  .monitor-topbar,
-  .panel-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .monitor-actions {
-    justify-content: flex-start;
-  }
-
-  .monitor-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .panel-head span {
-    text-align: left;
-  }
-
-  .history-table {
-    min-width: 520px;
-  }
+@media (max-width: 560px) {
+  .observatory-page { gap: 38px; }
+  .metric-item { min-height: 104px; padding: 17px 14px; }
+  .metric-item strong { font-size: 30px; }
+  .section-heading { align-items: flex-start; }
+  .section-heading :deep(.el-radio-group) { flex-shrink: 0; }
+  .section-heading :deep(.el-radio-button__inner) { padding-right: 9px; padding-left: 9px; }
 }
 </style>
