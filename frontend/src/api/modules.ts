@@ -4,6 +4,7 @@ import type { PageData } from '../types/api'
 export interface DashboardOverview {
   database_ok: boolean
   error?: string
+  application_timezone?: string
   total_users: number
   total_media: number
   total_play_records: number
@@ -155,7 +156,7 @@ export interface DownloadItem {
 }
 
 export function fetchDashboardOverview() {
-  return getApi<DashboardOverview>('/dashboard/overview')
+  return getApi<DashboardOverview>('/dashboard/overview', undefined, { suppressGlobalError: true })
 }
 
 export function fetchRecentActivities(limit = 20) {
@@ -167,7 +168,7 @@ export function fetchActiveWatches(windowSeconds = 300) {
 }
 
 export function fetchHistory(params: Record<string, unknown>) {
-  return getApi<PageData<HistoryItem>>('/history', params)
+  return getApi<PageData<HistoryItem>>('/history', params, { suppressGlobalError: true })
 }
 
 export async function downloadHistoryCsv(params?: Record<string, unknown>) {
@@ -175,8 +176,8 @@ export async function downloadHistoryCsv(params?: Record<string, unknown>) {
   return response.data as Blob
 }
 
-export function fetchUsers(params: Record<string, unknown>) {
-  return getApi<PageData<UserItem>>('/users', params)
+export function fetchUsers(params: Record<string, unknown>, options?: { suppressGlobalError?: boolean }) {
+  return getApi<PageData<UserItem>>('/users', params, options)
 }
 
 export function updateUserProfile(guid: string, data: { display_name?: string; note?: string }) {

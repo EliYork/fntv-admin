@@ -35,6 +35,7 @@ services:
     environment:
       APP_ENV: production
       APP_SECRET_KEY: change-this-to-a-long-random-string
+      TZ: Asia/Shanghai
 
       FNTV_DB_PATH: /fntv/trimmedia.db
       ADMIN_DB_PATH: /data/admin.db
@@ -48,6 +49,16 @@ services:
 ```
 
 `APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串。
+
+`TZ` 使用 IANA 时区名，默认 `Asia/Shanghai`。容器镜像包含时区数据，后端会显式使用该配置计算观看历史、今日播放、日期趋势和播放时段；这些结果不依赖 Docker 宿主机或浏览器的本地时区。不要使用固定 `+8` 替代 `TZ`。
+
+如需只读核对最近 5 条播放时间链路：
+
+```bash
+docker compose exec fntv-admin python scripts/audit_fntv_time_chain.py /fntv/trimmedia.db --limit 5
+```
+
+输出包含原始字段和值、秒/毫秒判断、UTC、应用时区、history API 和前端墙上时间。脚本使用 SQLite `mode=ro` 与 `PRAGMA query_only = ON`，不写飞牛数据库。
 
 ## 必需挂载
 

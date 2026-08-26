@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import csv
 import io
-import os
 import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +17,7 @@ from app.db.fntv_readonly import open_fntv_connection
 from app.db.schema_check import TableInfo, find_column, inspect_schema, quote_identifier
 from app.models import MediaProfile, UserProfile
 from app.utils.pagination import normalize_page
+from app.utils.time import application_now, application_timezone, application_timezone_name, format_timestamp, local_day_bounds, now_ts
 
 USER_TABLES = ("user", "users")
 ITEM_TABLES = ("item", "items", "media")
@@ -141,17 +141,7 @@ def get_play_record_columns(schema: FntvSchemaInfo) -> dict[str, str | None]:
 
 
 def normalize_timestamp(value: Any) -> str | None:
-    number = _to_float(value)
-    if number is None or number <= 0:
-        return None
-    if number > 1_000_000_000_000:
-        number = number / 1000
-    elif number < 1_000_000_000:
-        return None
-    try:
-        return datetime.fromtimestamp(number).strftime("%Y-%m-%d %H:%M:%S")
-    except (OSError, OverflowError, ValueError):
-        return None
+    return format_timestamp(value)
 
 
 def normalize_duration_seconds(value: Any) -> int | None:
@@ -213,6 +203,7 @@ def overview_data() -> dict[str, Any]:
             latest_play_time = _latest_play_time(conn, schema)
         return {
             "database_ok": True,
+            "application_timezone": application_timezone_name(),
             "total_users": users,
             "total_media": media,
             "total_play_records": plays,
@@ -267,7 +258,16 @@ def history_page(page: int, page_size: int, filters: dict[str, Any] | None = Non
                 rows, total = _play_rows(active_conn, schema, page_num, clean_page_size, filters)
                 items = _hydrate_play_rows(active_conn, schema, rows)
         pages = 0 if total == 0 else (total + clean_page_size - 1) // clean_page_size
-        return {"items": items, "page": page_num, "page_size": clean_page_size, "total": total, "pages": pages, "capabilities": schema.capabilities}
+        return {
+            "items": items,
+            "page": page_num,
+            "page_size": clean_page_size,
+            "total": total,
+            "pages": pages,
+            "capabilities": schema.capabilities,
+            "application_timezone": application_timezone_name(),
+            "generated_at": application_now().isoformat(timespec="seconds"),
+        }
     except AppError as exc:
         return _empty_page(page, page_size, error=exc.message)
     except sqlite3.Error:
@@ -471,7 +471,7 @@ def active_watches(window_seconds: int = 300, conn: sqlite3.Connection | None = 
                 return []
             seconds_expr = _timestamp_seconds_expr(update_expr)
             where = [f"{seconds_expr} >= ?"]
-            params: list[Any] = [int(datetime.now().timestamp()) - max(1, int(window_seconds))]
+            params: list[Any] = [now_ts() - max(1, int(window_seconds))]
             visible = _visible_clause(schema, "p")
             if visible:
                 where.append(visible)
@@ -689,25 +689,15 @@ def _recent_update_time_expr(schema: FntvSchemaInfo, alias: str | None = None) -
 
 
 def _timestamp_seconds_expr(expr: str) -> str:
-    return f"(CASE WHEN {expr} IS NULL THEN NULL WHEN CAST({expr} AS REAL) > 1000000000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
+    return f"(CASE WHEN {expr} IS NULL THEN NULL WHEN CAST({expr} AS REAL) >= 100000000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
 
 
-def _app_timezone() -> ZoneInfo | None:
-    tz_name = os.getenv("TZ") or "Asia/Shanghai"
-    try:
-        return ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        return None
+def _app_timezone() -> ZoneInfo:
+    return application_timezone()
 
 
 def _local_day_bounds(now: datetime | None = None) -> tuple[int, int]:
-    timezone = _app_timezone()
-    current = now or (datetime.now(timezone) if timezone else datetime.now().astimezone())
-    if timezone and current.tzinfo is None:
-        current = current.replace(tzinfo=timezone)
-    start = current.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=1)
-    return int(start.timestamp()), int(end.timestamp())
+    return local_day_bounds(now)
 
 
 def _play_time_value(row: dict[str, Any], schema: FntvSchemaInfo) -> Any:
@@ -803,8 +793,7 @@ def _count_today_plays(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int:
 def _range_bounds(value: Any) -> tuple[int | None, int | None]:
     if value in (None, "", "all"):
         return None, None
-    timezone = _app_timezone()
-    now = datetime.now(timezone) if timezone else datetime.now().astimezone()
+    now = application_now()
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     key = str(value).strip().lower()
     if key in {"today", "1d"}:
@@ -1537,11 +1526,19 @@ def _parse_datetime_to_seconds(value: Any) -> int | None:
         return None
     number = _to_float(value)
     if number is not None:
-        return int(number / 1000 if number > 1_000_000_000_000 else number)
-    text = str(value).strip().replace("T", " ")
+        return int(number / 1000 if number >= 100_000_000_000 else number)
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=application_timezone())
+        return int(parsed.timestamp())
+    except ValueError:
+        pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
-            return int(datetime.strptime(text[: len(fmt)], fmt).timestamp())
+            parsed = datetime.strptime(text, fmt).replace(tzinfo=application_timezone())
+            return int(parsed.timestamp())
         except ValueError:
             continue
     return None
@@ -1550,6 +1547,7 @@ def _parse_datetime_to_seconds(value: Any) -> int | None:
 def _empty_overview(error: str) -> dict[str, Any]:
     return {
         "database_ok": False,
+        "application_timezone": application_timezone_name(),
         "error": error,
         "total_users": 0,
         "total_media": 0,
@@ -1562,7 +1560,16 @@ def _empty_overview(error: str) -> dict[str, Any]:
 
 def _empty_page(page: int, page_size: int, error: str | None = None, capabilities: dict[str, bool] | None = None) -> dict[str, Any]:
     page_num, clean_page_size, _ = normalize_page(page, page_size)
-    data: dict[str, Any] = {"items": [], "page": page_num, "page_size": clean_page_size, "total": 0, "pages": 0, "capabilities": capabilities or {}}
+    data: dict[str, Any] = {
+        "items": [],
+        "page": page_num,
+        "page_size": clean_page_size,
+        "total": 0,
+        "pages": 0,
+        "capabilities": capabilities or {},
+        "application_timezone": application_timezone_name(),
+        "generated_at": application_now().isoformat(timespec="seconds"),
+    }
     if error:
         data["error"] = error
     return data

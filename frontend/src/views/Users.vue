@@ -25,8 +25,12 @@
         <el-table-column prop="watch_seconds" label="观看时长" width="120" sortable="custom">
           <template #default="{ row }">{{ row.watch_duration }}</template>
         </el-table-column>
-        <el-table-column prop="last_play_at" label="最近播放" min-width="150" sortable="custom" />
-        <el-table-column prop="last_login_at" label="最近登录" min-width="150" sortable="custom" />
+        <el-table-column prop="last_play_at" label="最近播放" min-width="170" sortable="custom">
+          <template #default="{ row }">{{ formatApplicationDateTime(row.last_play_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="last_login_at" label="最近登录" min-width="170" sortable="custom">
+          <template #default="{ row }">{{ formatApplicationDateTime(row.last_login_at) }}</template>
+        </el-table-column>
         <el-table-column prop="note" label="备注" min-width="180" />
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
@@ -59,6 +63,7 @@ import type { PageData } from '../types/api'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
+import { formatApplicationDateTime } from '../utils/applicationTime'
 
 const keyword = ref('')
 const showHidden = ref(false)

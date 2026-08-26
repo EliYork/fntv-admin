@@ -16,11 +16,16 @@ LABEL org.opencontainers.image.source="https://github.com/OWNER/fntv-admin" \
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV TZ=Asia/Shanghai
 
 COPY backend/requirements.txt ./requirements.txt
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y tzdata \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
+COPY scripts/audit_fntv_time_chain.py ./scripts/audit_fntv_time_chain.py
 COPY --from=frontend-builder /frontend/dist ./app/static
 
 RUN mkdir -p /data/logs /data/cache /data/backup /fntv

@@ -922,8 +922,16 @@ Phase 7C 基础可用版：
 5. 媒体类型分布，中文展示。
 6. 分辨率分布，缺失值显示为“未记录”。
 7. 报表模块使用 stale-while-revalidate：刷新和切换范围时保留上次成功数据，显示“正在更新”和最后更新时间；更新失败时只在模块内提示。
-8. 播放时段分布：按 24 小时桶展示播放开始时间分布，优先 `create_time`，fallback `update_time`，使用 `TZ` 或默认 `Asia/Shanghai` 做本地时区分桶。
+8. 播放时段分布：按 24 小时桶展示播放事件时间分布，与观看历史 `played_at`、今日播放、趋势和范围筛选共用同一 canonical 时间字段（当前优先 `update_time`，再 fallback 其他已识别时间字段），使用 `TZ` 或默认 `Asia/Shanghai` 做本地时区分桶。
 9. 收藏记录只读模块：读取 `item_user_favorite`，关联用户和媒体标题。
+
+时间语义统一规则：
+
+1. 飞牛 `update_time` / `create_time` 等 Unix 秒或毫秒值都表示绝对时间，不做固定 `+8 hours`。
+2. 后端统一通过 `app.utils.time` 和 IANA `ZoneInfo` 转换到 `TZ`；未配置或配置无效时使用 `Asia/Shanghai`，不依赖容器系统本地时区。
+3. 历史、用户、媒体、收藏、下载与报表时间统一返回带 offset 的 RFC3339，例如 `2026-08-26T13:49:32+08:00`。
+4. “今日”、最近 N 天、趋势日期桶、星期与 0-23 小时桶都使用应用时区自然日；前端显示 API 的应用时区墙上时间，不按浏览器时区重复转换。
+5. 可用 `docker compose exec fntv-admin python scripts/audit_fntv_time_chain.py /fntv/trimmedia.db --limit 5` 只读对照原始值、UTC、应用时区、history API 与前端墙上时间。它是容器内诊断命令，不是另一种部署方式。
 
 后续版本再扩展：
 

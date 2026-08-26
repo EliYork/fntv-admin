@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta
 from typing import Any, Iterator
 
 from app.db.fntv_readonly import open_fntv_connection
 from app.db.schema_check import find_column, quote_identifier
 from app.services import fntv_schema_adapter as adapter
+from app.utils.time import application_date_range, application_now, recent_local_day_start, timestamp_as_application_datetime
 
 ALLOWED_DAYS = {7, 30, 90}
 MAX_DAYS = 180
@@ -55,7 +54,7 @@ def normalize_limit(limit: int | None) -> int:
 
 
 def overview(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = application_now().isoformat(timespec="seconds")
     with _readonly_connection(conn) as active_conn:
         schema = adapter.detect_schema(conn=active_conn)
         users = _count_table(active_conn, schema.users.table, _visible_column(schema, schema.users.table))
@@ -92,11 +91,12 @@ def play_trend(days: int | str | None = 30, conn: sqlite3.Connection | None = No
         cutoff = _days_cutoff(clean_days)
         where.append(f"{seconds_expr} >= ?")
         params: list[Any] = [cutoff]
+        _register_application_time_functions(active_conn)
         active_user_sql = f"COUNT(DISTINCT p.{quote_identifier(user_col)})" if user_col else "0"
         rows = active_conn.execute(
             f"""
             SELECT
-                date({seconds_expr}, 'unixepoch') AS play_date,
+                fntv_app_date({seconds_expr}) AS play_date,
                 COUNT(*) AS play_count,
                 SUM({watched_expr}) AS watched_count,
                 {active_user_sql} AS active_user_count
@@ -138,26 +138,22 @@ def hourly_distribution(days: int | str | None = 30, conn: sqlite3.Connection | 
         if clean_days != "all":
             where.append(f"{seconds_expr} >= ?")
             params.append(_days_cutoff(clean_days))
+        _register_application_time_functions(active_conn)
         rows = active_conn.execute(
             f"""
-            SELECT {seconds_expr} AS played_seconds, COUNT(*) AS play_count
+            SELECT fntv_app_hour({seconds_expr}) AS play_hour, COUNT(*) AS play_count
             FROM {quote_identifier(table)} p
             {joins}
             WHERE {' AND '.join(where)}
-            GROUP BY played_seconds
+            GROUP BY play_hour
             """,
             params,
         ).fetchall()
-        timezone = adapter._app_timezone()
         for row in rows:
-            seconds = row["played_seconds"]
-            if seconds is None:
+            hour = row["play_hour"]
+            if hour is None:
                 continue
-            try:
-                hour = datetime.fromtimestamp(float(seconds), timezone).hour if timezone else datetime.fromtimestamp(float(seconds)).hour
-            except (OSError, OverflowError, ValueError, TypeError):
-                continue
-            buckets[hour]["play_count"] += int(row["play_count"] or 0)
+            buckets[int(hour)]["play_count"] += int(row["play_count"] or 0)
         return buckets
 
 
@@ -189,26 +185,26 @@ def weekly_hourly_distribution(days: int | str | None = 30, conn: sqlite3.Connec
         if clean_days != "all":
             where.append(f"{seconds_expr} >= ?")
             params.append(_days_cutoff(clean_days))
+        _register_application_time_functions(active_conn)
         rows = active_conn.execute(
             f"""
-            SELECT {seconds_expr} AS played_seconds, COUNT(*) AS play_count
+            SELECT
+                fntv_app_weekday({seconds_expr}) AS play_weekday,
+                fntv_app_hour({seconds_expr}) AS play_hour,
+                COUNT(*) AS play_count
             FROM {quote_identifier(table)} p
             {joins}
             WHERE {' AND '.join(where)}
-            GROUP BY played_seconds
+            GROUP BY play_weekday, play_hour
             """,
             params,
         ).fetchall()
-        timezone = adapter._app_timezone()
         for row in rows:
-            seconds = row["played_seconds"]
-            if seconds is None:
+            weekday = row["play_weekday"]
+            hour = row["play_hour"]
+            if weekday is None or hour is None:
                 continue
-            try:
-                local_time = datetime.fromtimestamp(float(seconds), timezone) if timezone else datetime.fromtimestamp(float(seconds))
-            except (OSError, OverflowError, ValueError, TypeError):
-                continue
-            index[(local_time.weekday(), local_time.hour)]["play_count"] += int(row["play_count"] or 0)
+            index[(int(weekday), int(hour))]["play_count"] += int(row["play_count"] or 0)
         return buckets
 
 
@@ -228,7 +224,20 @@ def top_users(days: int | str | None = 30, limit: int | None = 10, conn: sqlite3
         watched_expr = _watched_sql(schema.plays.fields.get("watched"), "p")
         watch_seconds_expr = _duration_seconds_sql(_qualified(schema.plays.fields.get("position"), "p"))
         username_expr = _display_expr(schema, schema.users.table, "u", ("username", "nickname", "name", "display_name", "guid"))
-        joins, where = _play_scope(schema, include_user=True, include_item=True)
+        # Active-user aggregation has no media dependency. Avoiding the item join
+        # as a hard requirement keeps valid user activity available when media
+        # metadata is missing, while a LEFT JOIN still excludes explicitly hidden media.
+        joins, where = _play_scope(schema, include_user=True, include_item=False)
+        play_item_col = schema.plays.fields.get("item_guid")
+        item_guid_col = schema.items.fields.get("guid")
+        if schema.items.table and play_item_col and item_guid_col:
+            joins += (
+                f"\nLEFT JOIN {quote_identifier(schema.items.table)} i "
+                f"ON p.{quote_identifier(play_item_col)} = i.{quote_identifier(item_guid_col)}"
+            )
+            item_visible = _visible_column(schema, schema.items.table)
+            if item_visible:
+                where.append(f"(i.{quote_identifier(item_visible)} = 1 OR i.{quote_identifier(item_guid_col)} IS NULL)")
         if clean_days != "all" and seconds_expr:
             where.append(f"{seconds_expr} >= ?")
             params: list[Any] = [_days_cutoff(clean_days)]
@@ -447,15 +456,10 @@ def _top_media_parent_join(item_table: str, item_guid_col: str, parent_col: str 
 
 
 def _hourly_time_expr(schema: adapter.FntvSchemaInfo) -> str | None:
-    table = schema.tables.get(schema.plays.table or "")
-    if not table:
-        return None
-    by_lower = {column.lower(): column for column in table.columns}
-    for name in ("create_time", "start_time", "update_time", "last_play_time", "played_at", "time", "timestamp"):
-        column = by_lower.get(name)
-        if column:
-            return f"p.{quote_identifier(column)}"
-    return None
+    # Use the same canonical event timestamp as history, today counters, trend,
+    # range filters and top lists. started_at remains available as metadata but
+    # does not define a different report bucket.
+    return adapter._play_time_expr(schema, "p")
 
 
 def _overview_play_stats(conn: sqlite3.Connection, schema: adapter.FntvSchemaInfo) -> dict[str, Any]:
@@ -550,7 +554,25 @@ def _qualified(column: str | None, alias: str) -> str | None:
 
 
 def _timestamp_seconds_sql(expr: str) -> str:
-    return f"(CASE WHEN {expr} IS NULL THEN NULL WHEN CAST({expr} AS REAL) > 1000000000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
+    return f"(CASE WHEN {expr} IS NULL THEN NULL WHEN CAST({expr} AS REAL) >= 100000000000 THEN CAST({expr} AS REAL) / 1000 ELSE CAST({expr} AS REAL) END)"
+
+
+def _register_application_time_functions(conn: sqlite3.Connection) -> None:
+    def app_date(value: Any) -> str | None:
+        local_time = timestamp_as_application_datetime(value)
+        return local_time.date().isoformat() if local_time else None
+
+    def app_hour(value: Any) -> int | None:
+        local_time = timestamp_as_application_datetime(value)
+        return local_time.hour if local_time else None
+
+    def app_weekday(value: Any) -> int | None:
+        local_time = timestamp_as_application_datetime(value)
+        return local_time.weekday() if local_time else None
+
+    conn.create_function("fntv_app_date", 1, app_date, deterministic=True)
+    conn.create_function("fntv_app_hour", 1, app_hour, deterministic=True)
+    conn.create_function("fntv_app_weekday", 1, app_weekday, deterministic=True)
 
 
 def _duration_seconds_sql(expr: str | None, *, runtime: bool = False) -> str:
@@ -610,14 +632,11 @@ def _avg_progress_expr(schema: adapter.FntvSchemaInfo) -> str:
 
 
 def _days_cutoff(days: int | str) -> int:
-    clean_days = int(days)
-    return int(time.time()) - ((clean_days - 1) * 86_400)
+    return recent_local_day_start(int(days))
 
 
 def _date_range(days: int) -> list[str]:
-    today = datetime.now().date()
-    start = today - timedelta(days=days - 1)
-    return [(start + timedelta(days=index)).isoformat() for index in range(days)]
+    return [day.isoformat() for day in application_date_range(days)]
 
 
 def _empty_trend(days: int) -> list[dict[str, Any]]:

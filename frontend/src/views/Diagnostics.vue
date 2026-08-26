@@ -175,7 +175,9 @@
         <el-table-column prop="media_file" label="媒体文件" min-width="220" />
         <el-table-column prop="resolution" label="分辨率" width="100" />
         <el-table-column prop="status_text" label="状态" width="100" />
-        <el-table-column prop="update_time" label="更新时间" min-width="150" />
+        <el-table-column prop="update_time" label="更新时间" min-width="170">
+          <template #default="{ row }">{{ formatApplicationDateTime(row.update_time) }}</template>
+        </el-table-column>
       </el-table>
       <EmptyState v-else description="暂无下载记录或未识别 download_task 表" />
     </div>
@@ -217,6 +219,7 @@ import { fetchDownloads, type DownloadItem } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 import { useAuthStore } from '../stores/auth'
+import { formatApplicationDateTime } from '../utils/applicationTime'
 
 const status = ref<DatabaseStatus | null>(null)
 const loading = ref(false)

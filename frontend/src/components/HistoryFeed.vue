@@ -95,6 +95,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { Download, Search } from '@element-plus/icons-vue'
 import { downloadHistoryCsv, fetchHistory, fetchUsers, type HistoryItem, type UserItem } from '../api/modules'
 import EmptyState from './EmptyState.vue'
+import { applicationTodayKey, calendarDayDifference, parseApplicationDateTime, type ApplicationDateParts } from '../utils/applicationTime'
 
 withDefaults(defineProps<{ heading?: string; headingTag?: 'h1' | 'h2' }>(), { heading: '观看历史', headingTag: 'h2' })
 
@@ -120,6 +121,7 @@ const loadingMore = ref(false)
 const exporting = ref(false)
 const exhausted = ref(false)
 const errorMessage = ref('')
+const applicationTimezone = ref('Asia/Shanghai')
 const loadSentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 let requestVersion = 0
@@ -133,9 +135,9 @@ const hasMore = computed(() => {
 const groups = computed<HistoryGroup[]>(() => {
   const grouped = new Map<string, HistoryGroup>()
   for (const item of items.value) {
-    const date = parseHistoryDate(item)
-    const key = date ? formatDateKey(date) : 'unknown'
-    const group = grouped.get(key) || { key, label: formatGroupLabel(date), items: [] }
+    const parts = historyDateParts(item)
+    const key = parts?.dateKey || 'unknown'
+    const group = grouped.get(key) || { key, label: formatGroupLabel(parts), items: [] }
     group.items.push(item)
     grouped.set(key, group)
   }
@@ -160,6 +162,7 @@ async function loadNextPage() {
       user_guid: userGuid.value || undefined
     })
     if (version !== requestVersion) return
+    if (data.error) throw new Error('history-data-unavailable')
 
     const knownKeys = new Set(items.value.map(historyKey))
     const uniqueItems = data.items.filter((item) => {
@@ -172,11 +175,12 @@ async function loadNextPage() {
     items.value = requestedPage === 1 ? uniqueItems : [...items.value, ...uniqueItems]
     total.value = data.total
     totalPages.value = data.pages
+    applicationTimezone.value = data.application_timezone || applicationTimezone.value
     nextPage.value = data.page + 1
-    errorMessage.value = data.error || ''
+    errorMessage.value = ''
     exhausted.value = data.items.length === 0 || (requestedPage > 1 && uniqueItems.length === 0) || items.value.length >= data.total || data.page >= data.pages
-  } catch (error) {
-    if (version === requestVersion) errorMessage.value = normalizeError(error, '观看历史加载失败')
+  } catch {
+    // Keep every previously committed page and retry the same nextPage later.
   } finally {
     if (version === requestVersion) {
       initialLoading.value = false
@@ -185,19 +189,42 @@ async function loadNextPage() {
   }
 }
 
-async function resetAndLoad() {
+async function resetAndLoad(preserveExisting = false) {
   requestVersion += 1
+  const version = requestVersion
   observer?.disconnect()
   initialLoading.value = false
   loadingMore.value = false
-  items.value = []
-  total.value = 0
-  totalPages.value = 0
-  nextPage.value = 1
-  exhausted.value = false
   errorMessage.value = ''
-  await nextTick()
-  await loadNextPage()
+  if (!preserveExisting) {
+    items.value = []
+    total.value = 0
+    totalPages.value = 0
+    nextPage.value = 1
+    exhausted.value = false
+  }
+  initialLoading.value = items.value.length === 0
+  try {
+    const data = await fetchHistory({
+      page: 1,
+      page_size: pageSize.value,
+      keyword: keyword.value.trim() || undefined,
+      range: range.value,
+      user_guid: userGuid.value || undefined
+    })
+    if (version !== requestVersion || data.error) return
+    const uniqueItems = deduplicate(data.items)
+    items.value = uniqueItems
+    total.value = data.total
+    totalPages.value = data.pages
+    nextPage.value = data.page + 1
+    exhausted.value = data.items.length === 0 || uniqueItems.length >= data.total || data.page >= data.pages
+    applicationTimezone.value = data.application_timezone || applicationTimezone.value
+  } catch {
+    // Refresh is atomic: existing history remains visible after any failure.
+  } finally {
+    if (version === requestVersion) initialLoading.value = false
+  }
   await nextTick()
   setupObserver()
 }
@@ -227,7 +254,7 @@ async function exportCsv() {
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
   } catch (error) {
-    errorMessage.value = normalizeError(error, 'CSV 导出失败')
+    errorMessage.value = 'CSV 导出失败，请稍后重试'
   } finally {
     exporting.value = false
   }
@@ -235,7 +262,7 @@ async function exportCsv() {
 
 async function loadUserOptions() {
   try {
-    const data = await fetchUsers({ page: 1, page_size: 100, sort_by: 'play_count', sort_order: 'desc' })
+    const data = await fetchUsers({ page: 1, page_size: 100, sort_by: 'play_count', sort_order: 'desc' }, { suppressGlobalError: true })
     userOptions.value = data.items
   } catch {
     userOptions.value = []
@@ -262,40 +289,24 @@ function historyDateTime(item: HistoryItem): string {
   return String(item.played_at || item.started_at || '')
 }
 
-function parseHistoryDate(item: HistoryItem): Date | null {
+function historyDateParts(item: HistoryItem): ApplicationDateParts | null {
   const value = item.played_at || item.started_at
-  if (!value) return null
-  if (typeof value === 'number') {
-    const timestamp = value > 10_000_000_000 ? value : value * 1000
-    const date = new Date(timestamp)
-    return Number.isNaN(date.getTime()) ? null : date
-  }
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
+  return parseApplicationDateTime(value, applicationTimezone.value)
 }
 
 function formatTime(item: HistoryItem): string {
-  const date = parseHistoryDate(item)
-  return date ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '时间未知'
+  const parts = historyDateParts(item)
+  return parts ? parts.timeKey.slice(0, 5) : '时间未知'
 }
 
-function formatDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function formatGroupLabel(date: Date | null): string {
-  if (!date) return '时间未知'
-  const today = startOfDay(new Date())
-  const target = startOfDay(date)
-  const days = Math.round((today.getTime() - target.getTime()) / 86_400_000)
-  const dateLabel = `${date.getMonth() + 1} 月 ${date.getDate()} 日`
+function formatGroupLabel(parts: ApplicationDateParts | null): string {
+  if (!parts) return '时间未知'
+  const todayKey = applicationTodayKey(applicationTimezone.value)
+  const days = todayKey ? calendarDayDifference(todayKey, parts.dateKey) : -1
+  const dateLabel = `${parts.month} 月 ${parts.day} 日`
   if (days === 0) return `今天 · ${dateLabel}`
   if (days === 1) return `昨天 · ${dateLabel}`
-  return `${date.getFullYear()} 年 ${dateLabel}`
-}
-
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return `${parts.year} 年 ${dateLabel}`
 }
 
 function secondaryTitle(item: HistoryItem): string {
@@ -324,12 +335,18 @@ function progressWarning(item: HistoryItem): string {
   return ''
 }
 
-function normalizeError(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback
+function deduplicate(source: HistoryItem[]): HistoryItem[] {
+  const known = new Set<string>()
+  return source.filter((item) => {
+    const key = historyKey(item)
+    if (known.has(key)) return false
+    known.add(key)
+    return true
+  })
 }
 
 async function refresh() {
-  await resetAndLoad()
+  await resetAndLoad(true)
 }
 
 defineExpose({ refresh })

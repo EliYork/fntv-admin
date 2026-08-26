@@ -109,7 +109,9 @@
           <el-table-column label="观看时长" width="140">
             <template #default="{ row }">{{ formatDuration(row.watch_seconds) }}</template>
           </el-table-column>
-          <el-table-column prop="last_played_at" label="最近播放" min-width="160" />
+          <el-table-column prop="last_played_at" label="最近播放" min-width="170">
+            <template #default="{ row }">{{ formatApplicationDateTime(row.last_played_at) }}</template>
+          </el-table-column>
         </el-table>
         <EmptyState v-else-if="!topUsers.loading" description="暂无活跃用户数据" />
       </div>
@@ -127,7 +129,9 @@
           <el-table-column prop="username" label="用户" min-width="160" />
           <el-table-column prop="title" label="媒体" min-width="260" />
           <el-table-column prop="media_type" label="类型" width="110" />
-          <el-table-column prop="favorite_time" label="收藏时间" min-width="160" />
+          <el-table-column prop="favorite_time" label="收藏时间" min-width="170">
+            <template #default="{ row }">{{ formatApplicationDateTime(row.favorite_time) }}</template>
+          </el-table-column>
         </el-table>
         <EmptyState v-else-if="!favorites.loading" description="暂无收藏记录或未识别收藏表" />
       </div>
@@ -159,7 +163,9 @@
             <el-table-column prop="type" label="类型" width="120" />
             <el-table-column prop="play_count" label="播放" width="100" />
             <el-table-column prop="watched_count" label="看完" width="100" />
-            <el-table-column prop="last_played_at" label="最近播放" min-width="160" />
+            <el-table-column prop="last_played_at" label="最近播放" min-width="170">
+              <template #default="{ row }">{{ formatApplicationDateTime(row.last_played_at) }}</template>
+            </el-table-column>
           </el-table>
           <EmptyState v-else-if="showListEmpty(topMedia)" description="暂无热门媒体数据" />
         </div>
@@ -217,6 +223,7 @@ import {
 } from '../api/modules'
 import { useAuthStore } from '../stores/auth'
 import { useRouteRefresh } from '../utils/routeRefresh'
+import { formatApplicationDateTime } from '../utils/applicationTime'
 
 type RangeKey = '7' | '30' | '90' | '365' | 'all'
 
@@ -283,7 +290,7 @@ const overviewMetrics = computed(() => [
   { label: '30 天播放', value: formatNumber(overview.data?.plays_30d) },
   { label: '总观看时长', value: formatDuration(overview.data?.total_watch_seconds) },
   { label: '平均进度', value: overview.data?.avg_progress_percent == null ? '-' : `${overview.data.avg_progress_percent}%` },
-  { label: '生成时间', value: overview.data?.generated_at || '-' }
+  { label: '生成时间', value: formatApplicationDateTime(overview.data?.generated_at) }
 ])
 
 function createDetailState<T>(): DetailState<T> {

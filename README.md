@@ -43,6 +43,7 @@ services:
     environment:
       APP_ENV: production
       APP_SECRET_KEY: change-this-to-a-long-random-string
+      TZ: Asia/Shanghai
 
       FNTV_DB_PATH: /fntv/trimmedia.db
       ADMIN_DB_PATH: /data/admin.db

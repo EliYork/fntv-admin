@@ -10,6 +10,13 @@
       </button>
 
       <div class="topbar-actions">
+        <el-tooltip v-if="route.path === '/dashboard' && dashboardFreshness" :content="dashboardFreshness.partial ? '部分数据可能来自上次成功更新' : '当前页面展示数据最后一次成功更新的时间'" placement="bottom">
+          <time class="data-freshness" :datetime="new Date(dashboardFreshness.updatedAt).toISOString()">
+            <span class="freshness-full">数据更新于 {{ formattedDashboardFreshness }}</span>
+            <span class="freshness-compact">更新 {{ formattedDashboardFreshness.slice(11) }}</span>
+            <span class="freshness-tiny">{{ formattedDashboardFreshness.slice(11) }}</span>
+          </time>
+        </el-tooltip>
         <el-tooltip :content="`最近检查：${refreshedAt}`" placement="bottom">
           <span class="database-status" :class="`is-${databaseStatusType}`" role="status">
             <i aria-hidden="true"></i>
@@ -105,6 +112,14 @@ import {
 import { fetchDatabaseStatus } from '../api/system'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { formatInstant } from '../utils/applicationTime'
+import { readSuccessfulData } from '../utils/successfulDataCache'
+
+interface DashboardFreshness {
+  updatedAt: number
+  applicationTimezone: string
+  partial: boolean
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -113,6 +128,7 @@ const theme = useThemeStore()
 const databaseChecking = ref(true)
 const databaseOk = ref(false)
 const refreshedAt = ref('-')
+const dashboardFreshness = ref<DashboardFreshness | null>(null)
 const drawerVisible = ref(false)
 let statusTimer: number | undefined
 theme.init()
@@ -123,6 +139,10 @@ const darkMode = computed({
 })
 
 const userInitial = computed(() => (auth.user?.username || 'A').trim().charAt(0).toUpperCase())
+const formattedDashboardFreshness = computed(() => {
+  const freshness = dashboardFreshness.value
+  return freshness ? formatInstant(freshness.updatedAt, freshness.applicationTimezone) : '—'
+})
 
 const navigationGroups = [
   {
@@ -207,12 +227,20 @@ async function handleUserCommand(command: string) {
   if (command === 'logout') await handleLogout()
 }
 
+function updateDashboardFreshness(event: Event): void {
+  const detail = (event as CustomEvent<DashboardFreshness>).detail
+  if (detail && typeof detail.updatedAt === 'number') dashboardFreshness.value = detail
+}
+
 onMounted(() => {
+  dashboardFreshness.value = readSuccessfulData<DashboardFreshness>('fntv.dashboard.v1.freshness')?.data || null
+  window.addEventListener('fntv-dashboard-freshness', updateDashboardFreshness)
   void refreshDatabaseStatus()
   statusTimer = window.setInterval(refreshDatabaseStatus, 60_000)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('fntv-dashboard-freshness', updateDashboardFreshness)
   if (statusTimer) window.clearInterval(statusTimer)
 })
 </script>
@@ -277,6 +305,8 @@ onUnmounted(() => {
 .brand-suffix { margin-left: 9px; padding-left: 9px; border-left: 1px solid var(--app-border); color: var(--app-muted); font-size: 13px; }
 
 .topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; }
+.data-freshness { margin-right: 10px; color: var(--app-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.freshness-compact, .freshness-tiny { display: none; }
 
 .database-status {
   display: inline-flex;
@@ -356,7 +386,9 @@ onUnmounted(() => {
   .admin-shell { grid-template-rows: 58px minmax(0, 1fr); height: 100dvh; min-height: 100vh; }
   .topbar { gap: 10px; padding: 0 10px 0 14px; }
   .brand-mark { height: 24px; margin-right: 9px; }
-  .brand-suffix, .status-full, .button-label, .username, .user-menu-button > :deep(.el-icon) { display: none; }
+  .brand-suffix, .status-full, .button-label, .username, .user-menu-button > :deep(.el-icon), .freshness-full { display: none; }
+  .freshness-compact { display: inline; }
+  .data-freshness { margin-right: 2px; font-size: 10px; }
   .status-compact { display: inline; }
   .database-status { min-width: 44px; margin-right: 0; justify-content: center; gap: 5px; font-size: 10px; }
   .database-status i { width: 9px; height: 9px; }
@@ -368,6 +400,9 @@ onUnmounted(() => {
 
 @media (max-width: 430px) {
   .brand-name { font-size: 14px; }
+  .freshness-compact { display: none; }
+  .freshness-tiny { display: inline; }
+  .data-freshness { position: absolute; bottom: 3px; left: 38px; margin-right: 0; line-height: 1; }
   .toolbar-button, .user-menu-button { min-width: 44px; width: 44px; padding-right: 6px; padding-left: 6px; }
 }
 </style>

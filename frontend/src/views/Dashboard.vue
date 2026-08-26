@@ -1,10 +1,6 @@
 <template>
   <section class="observatory-page">
     <h1 class="sr-only">飞牛影视数据中心</h1>
-    <div v-if="overview?.error || sectionErrors.overview" class="section-error" role="alert">
-      {{ overview?.error || sectionErrors.overview }}
-    </div>
-
     <section class="metric-strip" aria-label="核心指标">
       <article v-for="metric in metricCards" :key="metric.label" class="metric-item">
         <span>{{ metric.label }}</span>
@@ -22,14 +18,12 @@
           <el-radio-button :value="365">1 年</el-radio-button>
         </el-radio-group>
       </header>
-      <InlineError v-if="sectionErrors.trend" :message="sectionErrors.trend" />
       <PlaybackHeatmap v-if="trendItems.length" :date-items="trendItems" :modes="['date']" />
       <EmptyState v-else-if="!loading" description="暂无播放趋势数据" />
     </section>
 
     <section class="data-section" aria-labelledby="hourly-title">
       <header class="section-heading"><h2 id="hourly-title">播放时段</h2></header>
-      <InlineError v-if="sectionErrors.hourly" :message="sectionErrors.hourly" />
       <div v-if="hasHourlyData" class="hourly-scroll">
         <div class="hourly-chart" role="img" aria-label="最近 30 天各小时播放次数柱状图">
           <el-tooltip v-for="item in normalizedHourlyItems" :key="item.hour" :content="`${hourLabel(item.hour)} · ${item.play_count} 次播放`" placement="top">
@@ -48,7 +42,6 @@
     <section class="rank-grid">
       <article class="rank-panel" aria-labelledby="media-rank-title">
         <header class="section-heading"><h2 id="media-rank-title">热门内容</h2></header>
-        <InlineError v-if="sectionErrors.topMedia" :message="sectionErrors.topMedia" />
         <ol v-if="topMediaItems.length" class="rank-list">
           <li v-for="(item, index) in topMediaItems" :key="item.item_guid || `${item.title}-${index}`">
             <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
@@ -64,7 +57,6 @@
 
       <article class="rank-panel" aria-labelledby="user-rank-title">
         <header class="section-heading"><h2 id="user-rank-title">活跃用户</h2></header>
-        <InlineError v-if="sectionErrors.topUsers" :message="sectionErrors.topUsers" />
         <ol v-if="topUserItems.length" class="rank-list">
           <li v-for="(item, index) in topUserItems" :key="item.user_guid || `${item.username}-${index}`">
             <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
@@ -84,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   fetchDashboardOverview,
   fetchReportHourlyDistribution,
@@ -103,13 +95,12 @@ import EmptyState from '../components/EmptyState.vue'
 import HistoryFeed from '../components/HistoryFeed.vue'
 import PlaybackHeatmap from '../components/PlaybackHeatmap.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
+import { readSuccessfulData, writeSuccessfulData } from '../utils/successfulDataCache'
 
-const InlineError = defineComponent({
-  props: { message: { type: String, required: true } },
-  setup(props) {
-    return () => h('div', { class: 'inline-error', role: 'alert' }, props.message)
-  }
-})
+const CACHE_PREFIX = 'fntv.dashboard.v1'
+const FRESHNESS_KEY = `${CACHE_PREFIX}.freshness`
+type DashboardModule = 'overview' | 'report' | 'hourly' | 'topMedia' | 'topUsers' | 'trend'
+const lastSuccessfulAt: Partial<Record<DashboardModule, number>> = {}
 
 const overview = ref<DashboardOverview | null>(null)
 const reportOverview = ref<ReportOverview | null>(null)
@@ -120,8 +111,8 @@ const topUserItems = ref<TopUserReportItem[]>([])
 const trendRange = ref<30 | 90 | 365>(365)
 const loading = ref(false)
 const historyFeed = ref<InstanceType<typeof HistoryFeed> | null>(null)
-
-const sectionErrors = reactive({ overview: '', hourly: '', topMedia: '', trend: '', topUsers: '' })
+let loadRequestVersion = 0
+let trendRequestVersion = 0
 
 const metricCards = computed(() => [
   { label: '总用户', value: formatNumber(reportOverview.value?.total_users ?? overview.value?.total_users), note: '全部用户' },
@@ -139,52 +130,45 @@ const hourlyMax = computed(() => normalizedHourlyItems.value.reduce((max, item) 
 const hasHourlyData = computed(() => normalizedHourlyItems.value.some((item) => item.play_count > 0))
 
 async function loadData() {
+  const requestVersion = ++loadRequestVersion
+  const requestedTrendRange = trendRange.value
   loading.value = true
-  clearErrors()
   const [dashboard, report, hourly, topMedia, topUsers, trend] = await Promise.allSettled([
     fetchDashboardOverview(),
     fetchReportOverview(),
     fetchReportHourlyDistribution(30),
     fetchReportTopMedia({ days: '7', limit: 8, mode: 'series' }),
     fetchReportTopUsers({ days: '30', limit: 5 }),
-    fetchReportPlayTrend(trendRange.value)
+    fetchReportPlayTrend(requestedTrendRange)
   ])
+  if (requestVersion !== loadRequestVersion) return
+  const completedAt = Date.now()
 
-  if (dashboard.status === 'fulfilled') overview.value = dashboard.value
-  else sectionErrors.overview = errorMessage(dashboard.reason, '核心指标加载失败')
-
-  if (report.status === 'fulfilled') reportOverview.value = report.value
-  else sectionErrors.overview ||= errorMessage(report.reason, '核心指标加载失败')
-
-  if (hourly.status === 'fulfilled') hourlyItems.value = hourly.value
-  else sectionErrors.hourly = errorMessage(hourly.reason, '播放时段加载失败')
-
-  if (topMedia.status === 'fulfilled') topMediaItems.value = topMedia.value
-  else sectionErrors.topMedia = errorMessage(topMedia.reason, '热门内容加载失败')
-
-  if (topUsers.status === 'fulfilled') topUserItems.value = topUsers.value
-  else sectionErrors.topUsers = errorMessage(topUsers.reason, '活跃用户加载失败')
-
-  if (trend.status === 'fulfilled') trendItems.value = trend.value
-  else sectionErrors.trend = errorMessage(trend.reason, '播放趋势加载失败')
+  if (dashboard.status === 'fulfilled' && dashboard.value.database_ok && !dashboard.value.error) commitModule('overview', dashboard.value, (value) => { overview.value = value }, cacheKey('overview'), completedAt)
+  if (report.status === 'fulfilled') commitModule('report', report.value, (value) => { reportOverview.value = value }, cacheKey('report'), completedAt)
+  if (hourly.status === 'fulfilled') commitModule('hourly', hourly.value, (value) => { hourlyItems.value = value }, cacheKey('hourly'), completedAt)
+  if (topMedia.status === 'fulfilled') commitModule('topMedia', topMedia.value, (value) => { topMediaItems.value = value }, cacheKey('topMedia'), completedAt)
+  if (topUsers.status === 'fulfilled') commitModule('topUsers', topUsers.value, (value) => { topUserItems.value = value }, cacheKey('topUsers'), completedAt)
+  if (trend.status === 'fulfilled' && trendRange.value === requestedTrendRange) {
+    commitModule('trend', trend.value, (value) => { trendItems.value = value }, `${cacheKey('trend')}.${requestedTrendRange}`, completedAt)
+  }
   loading.value = false
+  publishFreshness()
 }
 
 async function loadTrend() {
-  sectionErrors.trend = ''
+  const requestVersion = ++trendRequestVersion
+  restoreTrendCache()
   try {
-    trendItems.value = await fetchReportPlayTrend(trendRange.value)
-  } catch (error) {
-    sectionErrors.trend = errorMessage(error, '播放趋势加载失败')
-  }
+    const value = await fetchReportPlayTrend(trendRange.value)
+    if (requestVersion !== trendRequestVersion) return
+    commitModule('trend', value, (items) => { trendItems.value = items }, trendCacheKey())
+    publishFreshness()
+  } catch { /* keep the last successful result for this range */ }
 }
 
 async function refreshPage() {
   await Promise.all([loadData(), historyFeed.value?.refresh()])
-}
-
-function clearErrors() {
-  for (const key of Object.keys(sectionErrors) as Array<keyof typeof sectionErrors>) sectionErrors[key] = ''
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -211,10 +195,58 @@ function formatWatchDuration(seconds: number): string {
   return `${minutes} 分钟`
 }
 
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback
+function cacheKey(module: DashboardModule): string {
+  return `${CACHE_PREFIX}.${module}`
 }
 
+function trendCacheKey(): string {
+  return `${cacheKey('trend')}.${trendRange.value}`
+}
+
+function commitModule<T>(module: DashboardModule, value: T, assign: (value: T) => void, key = cacheKey(module), updatedAt = Date.now()): void {
+  assign(value)
+  lastSuccessfulAt[module] = updatedAt
+  writeSuccessfulData(key, value, updatedAt)
+}
+
+function restoreModule<T>(module: DashboardModule, assign: (value: T) => void, key = cacheKey(module)): void {
+  const cached = readSuccessfulData<T>(key)
+  if (!cached) return
+  assign(cached.data)
+  lastSuccessfulAt[module] = cached.updatedAt
+}
+
+function restoreTrendCache(): void {
+  const cached = readSuccessfulData<PlayTrendItem[]>(trendCacheKey())
+  trendItems.value = cached?.data || []
+  if (cached) lastSuccessfulAt.trend = cached.updatedAt
+  else delete lastSuccessfulAt.trend
+}
+
+function restoreDashboardCache(): void {
+  restoreModule<DashboardOverview>('overview', (value) => { overview.value = value })
+  restoreModule<ReportOverview>('report', (value) => { reportOverview.value = value })
+  restoreModule<HourlyDistributionItem[]>('hourly', (value) => { hourlyItems.value = value })
+  restoreModule<TopMediaReportItem[]>('topMedia', (value) => { topMediaItems.value = value })
+  restoreModule<TopUserReportItem[]>('topUsers', (value) => { topUserItems.value = value })
+  restoreTrendCache()
+  publishFreshness()
+}
+
+function publishFreshness(): void {
+  const timestamps = Object.values(lastSuccessfulAt).filter((value): value is number => typeof value === 'number')
+  if (!timestamps.length) return
+  const updatedAt = Math.min(...timestamps)
+  const detail = {
+    updatedAt,
+    applicationTimezone: overview.value?.application_timezone || 'Asia/Shanghai',
+    partial: timestamps.length < 6 || Math.max(...timestamps) - Math.min(...timestamps) > 1000
+  }
+  writeSuccessfulData(FRESHNESS_KEY, detail, updatedAt)
+  window.dispatchEvent(new CustomEvent('fntv-dashboard-freshness', { detail }))
+}
+
+restoreDashboardCache()
 onMounted(loadData)
 useRouteRefresh(refreshPage)
 </script>
@@ -260,7 +292,6 @@ useRouteRefresh(refreshPage)
 .rank-content small { overflow: hidden; color: var(--app-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .rank-value { color: var(--app-title); font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .rank-value small { margin-left: 3px; color: var(--app-muted); font-size: 10px; font-weight: 500; }
-.inline-error, .section-error { padding: 10px 12px; border: 1px solid var(--app-error-border); border-radius: 8px; background: var(--app-error-bg); color: var(--app-error-text); font-size: 12px; }
 .observatory-page :deep(.empty-panel) { padding: 32px 12px; }
 
 @media (max-width: 900px) {

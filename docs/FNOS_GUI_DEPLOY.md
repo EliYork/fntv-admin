@@ -53,6 +53,7 @@ image: ghcr.io/eliyork/fntv-admin:latest
 ```env
 APP_ENV=production
 APP_SECRET_KEY=change-this-to-a-long-random-string
+TZ=Asia/Shanghai
 FNTV_DB_PATH=/fntv/trimmedia.db
 ADMIN_DB_PATH=/data/admin.db
 LOG_DIR=/data/logs

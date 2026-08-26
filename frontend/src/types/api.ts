@@ -21,5 +21,6 @@ export interface PageData<T> {
   total: number
   pages: number
   error?: string
+  application_timezone?: string
+  generated_at?: string
 }
-

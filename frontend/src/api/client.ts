@@ -120,11 +120,11 @@ function expireSession(): void {
 
 function normalizeErrorMessage(status: number | undefined, message: unknown): string {
   if (status === 403) return '无权限或访问被禁止'
+  if (status && status >= 500) return '服务器暂时不可用'
   if (typeof message === 'string' && message.trim()) {
     if (status !== 401 && message.includes('请先登录')) return '请求失败，请稍后重试'
     return message
   }
-  if (status && status >= 500) return '服务器暂时不可用'
   return '请求失败'
 }
 
