@@ -12,28 +12,29 @@
     <section class="data-section trend-section" aria-labelledby="trend-title">
       <header class="section-heading">
         <h2 id="trend-title">播放趋势</h2>
-        <el-radio-group v-model="trendRange" size="small" aria-label="播放趋势时间范围" @change="loadTrend">
-          <el-radio-button :value="30">30 天</el-radio-button>
-          <el-radio-button :value="90">90 天</el-radio-button>
-          <el-radio-button :value="365">1 年</el-radio-button>
-        </el-radio-group>
+        <span class="section-period">最近 1 年</span>
       </header>
       <PlaybackHeatmap v-if="trendItems.length" :date-items="trendItems" :modes="['date']" />
       <EmptyState v-else-if="!loading" description="暂无播放趋势数据" />
     </section>
 
     <section class="data-section" aria-labelledby="hourly-title">
-      <header class="section-heading"><h2 id="hourly-title">播放时段</h2></header>
+      <header class="section-heading">
+        <h2 id="hourly-title">播放时段</h2>
+        <el-select v-model="hourlyRange" class="period-select" size="small" aria-label="播放时段统计周期" @change="loadHourly">
+          <el-option v-for="option in rangeOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+      </header>
       <div v-if="hasHourlyData" class="hourly-scroll">
-        <div class="hourly-chart" role="img" aria-label="最近 30 天各小时播放次数柱状图">
-          <el-tooltip v-for="item in normalizedHourlyItems" :key="item.hour" :content="`${hourLabel(item.hour)} · ${item.play_count} 次播放`" placement="top">
+        <div class="hourly-chart" role="img" :aria-label="`${periodLabel(hourlyRange)}各小时播放次数柱状图`">
+          <AppTooltip v-for="item in normalizedHourlyItems" :key="item.hour" :content="`${hourLabel(item.hour)} · ${item.play_count} 次播放`" placement="top">
             <div class="hour-column" :aria-label="`${item.hour} 点播放 ${item.play_count} 次`">
               <div class="hour-bar-zone">
                 <span class="hour-bar" :style="{ height: `${hourBarHeight(item.play_count)}%` }"></span>
               </div>
               <span class="hour-tick">{{ visibleHourTick(item.hour) }}</span>
             </div>
-          </el-tooltip>
+          </AppTooltip>
         </div>
       </div>
       <EmptyState v-else-if="!loading" description="暂无播放时段数据" />
@@ -41,7 +42,12 @@
 
     <section class="rank-grid">
       <article class="rank-panel" aria-labelledby="media-rank-title">
-        <header class="section-heading"><h2 id="media-rank-title">热门内容</h2></header>
+        <header class="section-heading">
+          <h2 id="media-rank-title">热门内容</h2>
+          <el-select v-model="topMediaRange" class="period-select" size="small" aria-label="热门内容统计周期" @change="loadTopMedia">
+            <el-option v-for="option in rangeOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </header>
         <ol v-if="topMediaItems.length" class="rank-list">
           <li v-for="(item, index) in topMediaItems" :key="item.item_guid || `${item.title}-${index}`">
             <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
@@ -56,7 +62,12 @@
       </article>
 
       <article class="rank-panel" aria-labelledby="user-rank-title">
-        <header class="section-heading"><h2 id="user-rank-title">活跃用户</h2></header>
+        <header class="section-heading">
+          <h2 id="user-rank-title">活跃用户</h2>
+          <el-select v-model="topUsersRange" class="period-select" size="small" aria-label="活跃用户统计周期" @change="loadTopUsers">
+            <el-option v-for="option in rangeOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </header>
         <ol v-if="topUserItems.length" class="rank-list">
           <li v-for="(item, index) in topUserItems" :key="item.user_guid || `${item.username}-${index}`">
             <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
@@ -92,6 +103,7 @@ import {
   type TopUserReportItem
 } from '../api/modules'
 import EmptyState from '../components/EmptyState.vue'
+import AppTooltip from '../components/AppTooltip.vue'
 import HistoryFeed from '../components/HistoryFeed.vue'
 import PlaybackHeatmap from '../components/PlaybackHeatmap.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
@@ -108,11 +120,20 @@ const hourlyItems = ref<HourlyDistributionItem[]>([])
 const topMediaItems = ref<TopMediaReportItem[]>([])
 const trendItems = ref<PlayTrendItem[]>([])
 const topUserItems = ref<TopUserReportItem[]>([])
-const trendRange = ref<30 | 90 | 365>(365)
+type PeriodRange = '7' | '30' | '90' | 'all'
+const rangeOptions: Array<{ label: string; value: PeriodRange }> = [
+  { label: '7 天', value: '7' },
+  { label: '30 天', value: '30' },
+  { label: '90 天', value: '90' },
+  { label: '全部', value: 'all' }
+]
+const hourlyRange = ref<PeriodRange>('30')
+const topMediaRange = ref<PeriodRange>('7')
+const topUsersRange = ref<PeriodRange>('30')
 const loading = ref(false)
 const historyFeed = ref<InstanceType<typeof HistoryFeed> | null>(null)
 let loadRequestVersion = 0
-let trendRequestVersion = 0
+const moduleRequestVersions: Partial<Record<DashboardModule, number>> = {}
 
 const metricCards = computed(() => [
   { label: '总用户', value: formatNumber(reportOverview.value?.total_users ?? overview.value?.total_users), note: '全部用户' },
@@ -131,41 +152,47 @@ const hasHourlyData = computed(() => normalizedHourlyItems.value.some((item) => 
 
 async function loadData() {
   const requestVersion = ++loadRequestVersion
-  const requestedTrendRange = trendRange.value
+  const requestedHourlyRange = hourlyRange.value
+  const requestedTopMediaRange = topMediaRange.value
+  const requestedTopUsersRange = topUsersRange.value
   loading.value = true
   const [dashboard, report, hourly, topMedia, topUsers, trend] = await Promise.allSettled([
     fetchDashboardOverview(),
     fetchReportOverview(),
-    fetchReportHourlyDistribution(30),
-    fetchReportTopMedia({ days: '7', limit: 8, mode: 'series' }),
-    fetchReportTopUsers({ days: '30', limit: 5 }),
-    fetchReportPlayTrend(requestedTrendRange)
+    fetchReportHourlyDistribution(requestedHourlyRange),
+    fetchReportTopMedia({ days: requestedTopMediaRange, limit: 8, mode: 'series' }),
+    fetchReportTopUsers({ days: requestedTopUsersRange, limit: 5 }),
+    fetchReportPlayTrend(365)
   ])
   if (requestVersion !== loadRequestVersion) return
   const completedAt = Date.now()
 
   if (dashboard.status === 'fulfilled' && dashboard.value.database_ok && !dashboard.value.error) commitModule('overview', dashboard.value, (value) => { overview.value = value }, cacheKey('overview'), completedAt)
   if (report.status === 'fulfilled') commitModule('report', report.value, (value) => { reportOverview.value = value }, cacheKey('report'), completedAt)
-  if (hourly.status === 'fulfilled') commitModule('hourly', hourly.value, (value) => { hourlyItems.value = value }, cacheKey('hourly'), completedAt)
-  if (topMedia.status === 'fulfilled') commitModule('topMedia', topMedia.value, (value) => { topMediaItems.value = value }, cacheKey('topMedia'), completedAt)
-  if (topUsers.status === 'fulfilled') commitModule('topUsers', topUsers.value, (value) => { topUserItems.value = value }, cacheKey('topUsers'), completedAt)
-  if (trend.status === 'fulfilled' && trendRange.value === requestedTrendRange) {
-    commitModule('trend', trend.value, (value) => { trendItems.value = value }, `${cacheKey('trend')}.${requestedTrendRange}`, completedAt)
-  }
+  if (hourly.status === 'fulfilled' && hourlyRange.value === requestedHourlyRange) commitModule('hourly', hourly.value, (value) => { hourlyItems.value = value }, periodCacheKey('hourly', requestedHourlyRange), completedAt)
+  if (topMedia.status === 'fulfilled' && topMediaRange.value === requestedTopMediaRange) commitModule('topMedia', topMedia.value, (value) => { topMediaItems.value = value }, periodCacheKey('topMedia', requestedTopMediaRange), completedAt)
+  if (topUsers.status === 'fulfilled' && topUsersRange.value === requestedTopUsersRange) commitModule('topUsers', topUsers.value, (value) => { topUserItems.value = value }, periodCacheKey('topUsers', requestedTopUsersRange), completedAt)
+  if (trend.status === 'fulfilled') commitModule('trend', trend.value, (value) => { trendItems.value = value }, trendCacheKey(), completedAt)
   loading.value = false
   publishFreshness()
 }
 
-async function loadTrend() {
-  const requestVersion = ++trendRequestVersion
-  restoreTrendCache()
+async function loadPeriodModule<T extends unknown[]>(module: DashboardModule, cachePeriod: PeriodRange, loader: () => Promise<T>, assign: (value: T) => void) {
+  const requestVersion = (moduleRequestVersions[module] || 0) + 1
+  moduleRequestVersions[module] = requestVersion
+  const key = periodCacheKey(module, cachePeriod)
+  if (!restoreModule(module, assign, key)) assign([] as unknown as T)
   try {
-    const value = await fetchReportPlayTrend(trendRange.value)
-    if (requestVersion !== trendRequestVersion) return
-    commitModule('trend', value, (items) => { trendItems.value = items }, trendCacheKey())
+    const value = await loader()
+    if (moduleRequestVersions[module] !== requestVersion) return
+    commitModule(module, value, assign, key)
     publishFreshness()
   } catch { /* keep the last successful result for this range */ }
 }
+
+function loadHourly() { return loadPeriodModule('hourly', hourlyRange.value, () => fetchReportHourlyDistribution(hourlyRange.value), (value) => { hourlyItems.value = value }) }
+function loadTopMedia() { return loadPeriodModule('topMedia', topMediaRange.value, () => fetchReportTopMedia({ days: topMediaRange.value, limit: 8, mode: 'series' }), (value) => { topMediaItems.value = value }) }
+function loadTopUsers() { return loadPeriodModule('topUsers', topUsersRange.value, () => fetchReportTopUsers({ days: topUsersRange.value, limit: 5 }), (value) => { topUserItems.value = value }) }
 
 async function refreshPage() {
   await Promise.all([loadData(), historyFeed.value?.refresh()])
@@ -188,6 +215,10 @@ function visibleHourTick(hour: number): string {
   return [0, 3, 6, 9, 12, 15, 18, 21, 23].includes(hour) ? String(hour) : ''
 }
 
+function periodLabel(period: PeriodRange): string {
+  return period === 'all' ? '全部时间' : `最近 ${rangeOptions.find((option) => option.value === period)?.label || period}`
+}
+
 function formatWatchDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
@@ -200,7 +231,11 @@ function cacheKey(module: DashboardModule): string {
 }
 
 function trendCacheKey(): string {
-  return `${cacheKey('trend')}.${trendRange.value}`
+  return `${cacheKey('trend')}.365`
+}
+
+function periodCacheKey(module: DashboardModule, period: PeriodRange): string {
+  return `${cacheKey(module)}.${period}`
 }
 
 function commitModule<T>(module: DashboardModule, value: T, assign: (value: T) => void, key = cacheKey(module), updatedAt = Date.now()): void {
@@ -209,11 +244,12 @@ function commitModule<T>(module: DashboardModule, value: T, assign: (value: T) =
   writeSuccessfulData(key, value, updatedAt)
 }
 
-function restoreModule<T>(module: DashboardModule, assign: (value: T) => void, key = cacheKey(module)): void {
+function restoreModule<T>(module: DashboardModule, assign: (value: T) => void, key = cacheKey(module)): boolean {
   const cached = readSuccessfulData<T>(key)
-  if (!cached) return
+  if (!cached) return false
   assign(cached.data)
   lastSuccessfulAt[module] = cached.updatedAt
+  return true
 }
 
 function restoreTrendCache(): void {
@@ -226,9 +262,9 @@ function restoreTrendCache(): void {
 function restoreDashboardCache(): void {
   restoreModule<DashboardOverview>('overview', (value) => { overview.value = value })
   restoreModule<ReportOverview>('report', (value) => { reportOverview.value = value })
-  restoreModule<HourlyDistributionItem[]>('hourly', (value) => { hourlyItems.value = value })
-  restoreModule<TopMediaReportItem[]>('topMedia', (value) => { topMediaItems.value = value })
-  restoreModule<TopUserReportItem[]>('topUsers', (value) => { topUserItems.value = value })
+  restoreModule<HourlyDistributionItem[]>('hourly', (value) => { hourlyItems.value = value }, periodCacheKey('hourly', hourlyRange.value))
+  restoreModule<TopMediaReportItem[]>('topMedia', (value) => { topMediaItems.value = value }, periodCacheKey('topMedia', topMediaRange.value))
+  restoreModule<TopUserReportItem[]>('topUsers', (value) => { topUserItems.value = value }, periodCacheKey('topUsers', topUsersRange.value))
   restoreTrendCache()
   publishFreshness()
 }
@@ -272,6 +308,8 @@ useRouteRefresh(refreshPage)
 .data-section { display: grid; gap: 20px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 32px; }
 .section-heading h2 { margin: 0; color: var(--app-title); font-size: clamp(17px, 1.5vw, 20px); font-weight: 660; letter-spacing: -0.015em; }
+.section-period { color: var(--app-muted); font-size: 12px; }
+.period-select { width: 88px; }
 .trend-section { padding-top: 2px; }
 
 .hourly-scroll { overflow-x: auto; overflow-y: hidden; padding: 3px 0 2px; }

@@ -45,19 +45,27 @@
     </div>
 
     <div v-else-if="groups.length" class="history-groups">
+      <div class="history-columns" aria-hidden="true">
+        <span>时间</span>
+        <span>用户</span>
+        <span>内容</span>
+        <span>播放进度</span>
+        <span>画质</span>
+      </div>
       <section v-for="group in groups" :key="group.key" class="history-day">
         <h3>{{ group.label }}</h3>
         <div class="history-list">
           <article
             v-for="item in group.items"
             :key="historyKey(item)"
-            v-memo="[historyKey(item), item.progress_percent, item.watched]"
+            v-memo="[historyKey(item), item.position_seconds, item.runtime_seconds, item.progress_percent, item.watched, item.resolution]"
             class="history-entry"
           >
             <div class="history-time">
               <time :datetime="historyDateTime(item)">{{ formatTime(item) }}</time>
-              <span>{{ item.username || item.user || '未知用户' }}</span>
             </div>
+
+            <span class="history-user" :title="item.username || item.user || '未知用户'">{{ item.username || item.user || '未知用户' }}</span>
 
             <div class="history-title-block">
               <strong :title="item.display_title || item.title">{{ item.display_title || item.title || '未命名媒体' }}</strong>
@@ -74,13 +82,13 @@
               </div>
             </div>
 
-            <span class="history-resolution">{{ item.resolution || '—' }}</span>
+            <span class="history-resolution">{{ formatResolution(item.resolution) }}</span>
           </article>
         </div>
       </section>
     </div>
 
-    <EmptyState v-else description="暂无观看历史或未识别播放记录表" />
+    <EmptyState v-else-if="!errorMessage" description="暂无观看历史或未识别播放记录表" />
 
     <footer v-if="items.length" class="history-footer">
       <div ref="loadSentinel" class="load-sentinel" aria-hidden="true"></div>
@@ -181,6 +189,7 @@ async function loadNextPage() {
     exhausted.value = data.items.length === 0 || (requestedPage > 1 && uniqueItems.length === 0) || items.value.length >= data.total || data.page >= data.pages
   } catch {
     // Keep every previously committed page and retry the same nextPage later.
+    errorMessage.value = items.value.length ? '加载更多失败，已保留当前记录' : '观看历史加载失败，请稍后重试'
   } finally {
     if (version === requestVersion) {
       initialLoading.value = false
@@ -212,7 +221,8 @@ async function resetAndLoad(preserveExisting = false) {
       range: range.value,
       user_guid: userGuid.value || undefined
     })
-    if (version !== requestVersion || data.error) return
+    if (version !== requestVersion) return
+    if (data.error) throw new Error('history-data-unavailable')
     const uniqueItems = deduplicate(data.items)
     items.value = uniqueItems
     total.value = data.total
@@ -222,6 +232,7 @@ async function resetAndLoad(preserveExisting = false) {
     applicationTimezone.value = data.application_timezone || applicationTimezone.value
   } catch {
     // Refresh is atomic: existing history remains visible after any failure.
+    errorMessage.value = items.value.length ? '更新失败，仍显示上次成功记录' : '观看历史加载失败，请稍后重试'
   } finally {
     if (version === requestVersion) initialLoading.value = false
   }
@@ -316,18 +327,52 @@ function secondaryTitle(item: HistoryItem): string {
 }
 
 function progressPercent(item: HistoryItem): number | null {
-  if (item.watched) return 100
-  if (typeof item.progress_percent === 'number') return Math.max(0, Math.min(100, item.progress_percent))
-  if (item.position_seconds != null && item.runtime_seconds && item.runtime_seconds > 0) {
-    return Math.max(0, Math.min(100, (item.position_seconds / item.runtime_seconds) * 100))
+  const position = validSeconds(item.position_seconds)
+  const runtime = validSeconds(item.runtime_seconds)
+  if (position !== null) {
+    if (runtime !== null && runtime > 0) return Math.max(0, Math.min(100, (position / runtime) * 100))
+    if (typeof item.progress_percent === 'number' && Number.isFinite(item.progress_percent)) return Math.max(0, Math.min(100, item.progress_percent))
+    return null
   }
+  if (typeof item.progress_percent === 'number' && Number.isFinite(item.progress_percent)) return Math.max(0, Math.min(100, item.progress_percent))
+  if (item.watched) return 100
   return null
 }
 
 function progressText(item: HistoryItem): string {
-  if (item.progress) return item.progress
+  const position = validSeconds(item.position_seconds)
+  const runtime = validSeconds(item.runtime_seconds)
+  if (position !== null && runtime !== null && runtime > 0) return `${formatPlaybackTime(position)} / ${formatPlaybackTime(runtime)}`
+  if (position !== null) return formatPlaybackTime(position)
+  if (typeof item.progress_percent === 'number' && Number.isFinite(item.progress_percent)) return `${Math.round(Math.max(0, Math.min(100, item.progress_percent)))}%`
+  if (item.watched) return '已完成'
+  if (item.progress && item.progress !== '-') return item.progress
   const percent = progressPercent(item)
   return percent == null ? '进度未知' : `${Math.round(percent)}%`
+}
+
+function validSeconds(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function formatPlaybackTime(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  return hours > 0
+    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+function formatResolution(value: string | null | undefined): string {
+  const normalized = String(value || '').trim().toLowerCase().replace(/\s+/g, '')
+  if (!normalized || ['unknown', '未知', '未记录', 'null', '-'].includes(normalized)) return '—'
+  if (['original', 'source', '原画', '原始', '原始画质'].includes(normalized)) return '原画'
+  if (normalized.includes('2160') || normalized.includes('4k')) return '4K'
+  const height = normalized.match(/(1080|1440|720|480|360)(?:p|i)?/)
+  if (height) return `${height[1]}P`
+  return value?.trim() || '—'
 }
 
 function progressWarning(item: HistoryItem): string {
@@ -408,11 +453,26 @@ onUnmounted(() => observer?.disconnect())
 
 .history-list { border-top: 1px solid var(--app-border-soft); }
 
+.history-columns,
+.history-entry {
+  grid-template-columns: 92px 130px minmax(250px, 1fr) minmax(210px, 0.7fr) 70px;
+  gap: 18px;
+}
+
+.history-columns {
+  display: grid;
+  padding: 0 10px 9px;
+  color: var(--app-muted);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.035em;
+}
+
+.history-columns span:last-child { text-align: right; }
+
 .history-entry {
   display: grid;
-  grid-template-columns: 142px minmax(250px, 1fr) minmax(210px, 0.7fr) 70px;
   align-items: center;
-  gap: 22px;
   min-height: 82px;
   padding: 14px 10px;
   border-bottom: 1px solid var(--app-border-soft);
@@ -424,7 +484,8 @@ onUnmounted(() => observer?.disconnect())
 .history-entry:hover { background: var(--app-row-hover); }
 .history-time, .history-title-block, .history-progress { display: grid; gap: 5px; min-width: 0; }
 .history-time time { color: var(--app-title); font-size: 15px; font-variant-numeric: tabular-nums; }
-.history-time span, .history-title-block span, .progress-copy, .history-resolution { color: var(--app-muted); font-size: 12px; }
+.history-user, .history-title-block span, .progress-copy, .history-resolution { color: var(--app-muted); font-size: 12px; }
+.history-user { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-title-block strong { overflow: hidden; color: var(--app-title); font-size: 15px; font-weight: 630; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .history-title-block span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress-copy { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
@@ -449,7 +510,7 @@ onUnmounted(() => observer?.disconnect())
   .history-toolbar { grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(130px, 0.55fr)); }
   .history-toolbar > :deep(.el-button) { justify-self: start; }
   .batch-control { justify-content: flex-start; }
-  .history-entry { grid-template-columns: 120px minmax(220px, 1fr) minmax(180px, 0.75fr) 60px; gap: 16px; }
+  .history-columns, .history-entry { grid-template-columns: 78px 110px minmax(220px, 1fr) minmax(180px, 0.75fr) 60px; gap: 14px; }
 }
 
 @media (max-width: 700px) {
@@ -459,10 +520,11 @@ onUnmounted(() => observer?.disconnect())
   .history-toolbar > :deep(.el-button) { width: 100%; }
   .batch-control { justify-content: space-between; }
   .history-toolbar :deep(.el-input__wrapper), .history-toolbar :deep(.el-select__wrapper), .history-toolbar :deep(.el-button) { min-height: 44px; }
+  .history-columns { display: none; }
   .history-entry { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; min-height: 0; padding: 15px 4px; }
-  .history-time { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+  .history-time { grid-column: 1; grid-row: 1; }
   .history-time time { font-size: 13px; }
-  .history-time span { text-align: right; }
+  .history-user { grid-column: 2; grid-row: 1; max-width: 45vw; text-align: right; }
   .history-title-block { grid-column: 1 / -1; }
   .history-title-block strong { white-space: normal; }
   .history-progress { grid-column: 1; }

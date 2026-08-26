@@ -14,14 +14,6 @@
       </div>
     </div>
 
-    <div class="toolbar">
-      <el-radio-group v-model="selectedDays" @change="handleRangeChange">
-        <el-radio-button v-for="item in rangeOptions" :key="item.value" :label="item.value">
-          {{ item.label }}
-        </el-radio-button>
-      </el-radio-group>
-    </div>
-
     <div class="metrics section" v-loading="initialLoading(overview)">
       <div v-for="item in overviewMetrics" :key="item.label" class="metric-card">
         <div class="metric-label">{{ item.label }}</div>
@@ -34,7 +26,7 @@
       <div class="table-panel">
         <div class="panel-title panel-title-row">
           <span>播放趋势</span>
-          <span class="panel-state">{{ panelStatus(trend) }}</span>
+          <span class="panel-heading-meta"><span>最近 1 年</span><span class="panel-state">{{ panelStatus(trend) }}</span></span>
         </div>
         <div class="panel-body" v-loading="initialLoading(trend)">
           <div v-if="trend.loading && trend.hasLoaded" class="inline-updating">正在更新...</div>
@@ -42,14 +34,19 @@
           <template v-if="trend.items.length">
             <PlaybackHeatmap :date-items="trend.items" :modes="['date']" />
           </template>
-          <EmptyState v-else-if="!trend.loading" description="暂无播放趋势数据" />
+          <EmptyState v-else-if="!trend.loading && !trend.error" description="暂无播放趋势数据" />
         </div>
       </div>
 
       <div class="table-panel">
         <div class="panel-title panel-title-row">
           <span>播放时段分布</span>
-          <span class="panel-state">{{ panelStatus(hourly) }}</span>
+          <span class="panel-controls">
+            <el-select v-model="hourlyDays" class="period-select" size="small" aria-label="播放时段统计周期" @change="loadHourly">
+              <el-option v-for="item in rangeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+            <span class="panel-state">{{ panelStatus(hourly) }}</span>
+          </span>
         </div>
         <div class="panel-body" v-loading="initialLoading(hourly)">
           <div v-if="hourly.loading && hourly.hasLoaded" class="inline-updating">正在更新...</div>
@@ -63,7 +60,7 @@
               <span class="distribution-count">{{ row.play_count }}</span>
             </div>
           </template>
-          <EmptyState v-else-if="!hourly.loading" description="暂无播放时段数据" />
+          <EmptyState v-else-if="!hourly.loading && !hourly.error" description="暂无播放时段数据" />
         </div>
       </div>
 
@@ -84,7 +81,7 @@
               <span class="distribution-count">{{ row.count }}</span>
             </div>
           </template>
-          <EmptyState v-else-if="!mediaTypes.loading" description="暂无媒体类型数据" />
+          <EmptyState v-else-if="!mediaTypes.loading && !mediaTypes.error" description="暂无媒体类型数据" />
         </div>
       </div>
     </div>
@@ -92,7 +89,12 @@
     <div class="table-panel section">
       <div class="panel-title panel-title-row">
         <span>活跃用户榜</span>
-        <span class="panel-state">{{ panelStatus(topUsers) }}</span>
+        <span class="panel-controls">
+          <el-select v-model="topUsersDays" class="period-select" size="small" aria-label="活跃用户统计周期" @change="loadTopUsers">
+            <el-option v-for="item in rangeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <span class="panel-state">{{ panelStatus(topUsers) }}</span>
+        </span>
       </div>
       <div class="panel-body" v-loading="initialLoading(topUsers)">
         <div v-if="topUsers.loading && topUsers.hasLoaded" class="inline-updating">正在更新...</div>
@@ -113,7 +115,7 @@
             <template #default="{ row }">{{ formatApplicationDateTime(row.last_played_at) }}</template>
           </el-table-column>
         </el-table>
-        <EmptyState v-else-if="!topUsers.loading" description="暂无活跃用户数据" />
+        <EmptyState v-else-if="!topUsers.loading && !topUsers.error" description="暂无活跃用户数据" />
       </div>
     </div>
 
@@ -133,17 +135,22 @@
             <template #default="{ row }">{{ formatApplicationDateTime(row.favorite_time) }}</template>
           </el-table-column>
         </el-table>
-        <EmptyState v-else-if="!favorites.loading" description="暂无收藏记录或未识别收藏表" />
+        <EmptyState v-else-if="!favorites.loading && !favorites.error" description="暂无收藏记录或未识别收藏表" />
       </div>
     </div>
 
     <div class="table-panel section">
       <div class="panel-title panel-title-row">
         <span>热门媒体榜</span>
-        <el-radio-group v-model="topMediaMode" size="small" @change="loadTopMedia">
-          <el-radio-button label="episode">单集</el-radio-button>
-          <el-radio-button label="series">整部剧</el-radio-button>
-        </el-radio-group>
+        <span class="panel-controls">
+          <el-select v-model="topMediaDays" class="period-select" size="small" aria-label="热门媒体统计周期" @change="loadTopMedia">
+            <el-option v-for="item in rangeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <el-radio-group v-model="topMediaMode" size="small" aria-label="热门媒体统计方式" @change="loadTopMedia">
+            <el-radio-button value="episode">单集</el-radio-button>
+            <el-radio-button value="series">整部剧</el-radio-button>
+          </el-radio-group>
+        </span>
       </div>
       <div class="panel-body" v-loading="initialLoading(topMedia)">
         <div class="panel-status-row">
@@ -175,7 +182,12 @@
     <div class="table-panel section">
       <div class="panel-title panel-title-row">
         <span>分辨率分布</span>
-        <span class="panel-state">{{ panelStatus(resolutions) }}</span>
+        <span class="panel-controls">
+          <el-select v-model="resolutionDays" class="period-select" size="small" aria-label="分辨率统计周期" @change="loadResolutions">
+            <el-option v-for="item in rangeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <span class="panel-state">{{ panelStatus(resolutions) }}</span>
+        </span>
       </div>
       <div class="panel-body" v-loading="initialLoading(resolutions)">
         <div v-if="resolutions.loading && resolutions.hasLoaded" class="inline-updating">正在更新...</div>
@@ -224,8 +236,9 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { useRouteRefresh } from '../utils/routeRefresh'
 import { formatApplicationDateTime } from '../utils/applicationTime'
+import { readSuccessfulData, writeSuccessfulData } from '../utils/successfulDataCache'
 
-type RangeKey = '7' | '30' | '90' | '365' | 'all'
+type RangeKey = '7' | '30' | '90' | 'all'
 
 interface DetailState<T> {
   loading: boolean
@@ -245,18 +258,19 @@ interface ListState<T> {
   items: T[]
 }
 
-const selectedDays = ref<RangeKey>('30')
-const trendDaysValue = ref<RangeKey>('365')
-let trendDaysTouched = false
+const hourlyDays = ref<RangeKey>('30')
+const topUsersDays = ref<RangeKey>('30')
+const topMediaDays = ref<RangeKey>('7')
+const resolutionDays = ref<RangeKey>('30')
 const topMediaMode = ref<'episode' | 'series'>('episode')
 const auth = useAuthStore()
 const rangeOptions: Array<{ label: string; value: RangeKey }> = [
   { label: '7 天', value: '7' },
   { label: '30 天', value: '30' },
   { label: '90 天', value: '90' },
-  { label: '1 年', value: '365' },
   { label: '全部', value: 'all' }
 ]
+const REPORT_CACHE_PREFIX = 'fntv.reports.v2'
 
 const overview = reactive<DetailState<ReportOverview>>(createDetailState<ReportOverview>())
 const trend = reactive<ListState<PlayTrendItem>>(createListState<PlayTrendItem>())
@@ -301,7 +315,7 @@ function createListState<T>(): ListState<T> {
   return { loading: false, error: '', hasLoaded: false, lastUpdatedAt: null, requestId: 0, items: [] }
 }
 
-async function loadDetail<T>(state: DetailState<T>, loader: () => Promise<T>) {
+async function loadDetail<T>(state: DetailState<T>, loader: () => Promise<T>, key: string) {
   const requestId = state.requestId + 1
   state.requestId = requestId
   state.loading = true
@@ -312,15 +326,16 @@ async function loadDetail<T>(state: DetailState<T>, loader: () => Promise<T>) {
     state.data = data
     state.hasLoaded = true
     state.lastUpdatedAt = Date.now()
-  } catch (error) {
+    writeSuccessfulData(key, data, state.lastUpdatedAt)
+  } catch {
     if (state.requestId !== requestId) return
-    state.error = state.hasLoaded ? '更新失败，仍显示上次成功数据' : errorMessage(error)
+    state.error = state.hasLoaded ? '更新失败，仍显示上次成功数据' : '数据加载失败，请稍后重试'
   } finally {
     if (state.requestId === requestId) state.loading = false
   }
 }
 
-async function loadList<T>(state: ListState<T>, loader: () => Promise<T[]>) {
+async function loadList<T>(state: ListState<T>, loader: () => Promise<T[]>, key: string) {
   const requestId = state.requestId + 1
   state.requestId = requestId
   state.loading = true
@@ -334,9 +349,10 @@ async function loadList<T>(state: ListState<T>, loader: () => Promise<T[]>) {
     state.items = items
     state.hasLoaded = true
     state.lastUpdatedAt = Date.now()
-  } catch (error) {
+    writeSuccessfulData(key, items, state.lastUpdatedAt)
+  } catch {
     if (state.requestId !== requestId) return
-    state.error = state.hasLoaded ? '更新失败，仍显示上次成功数据' : errorMessage(error)
+    state.error = state.hasLoaded ? '更新失败，仍显示上次成功数据' : '数据加载失败，请稍后重试'
   } finally {
     if (state.requestId === requestId) state.loading = false
   }
@@ -347,42 +363,81 @@ function hasListItems<T>(state: ListState<T>): boolean {
 }
 
 function showListEmpty<T>(state: ListState<T>): boolean {
-  return !state.loading && Array.isArray(state.items) && state.items.length === 0
+  return !state.loading && !state.error && Array.isArray(state.items) && state.items.length === 0
 }
 
-function trendDaysParam(): number | string {
-  const value = trendDaysTouched ? selectedDays.value : trendDaysValue.value
-  return value === 'all' ? 'all' : Number(value)
+function reportCacheKey(module: string, range?: RangeKey | '365', variant?: string): string {
+  return [REPORT_CACHE_PREFIX, module, range, variant].filter(Boolean).join('.')
 }
 
-async function handleRangeChange() {
-  trendDaysTouched = true
-  await loadRangeData()
+function restoreDetail<T>(state: DetailState<T>, key: string): void {
+  const cached = readSuccessfulData<T>(key)
+  if (!cached) return
+  state.data = cached.data
+  state.hasLoaded = true
+  state.lastUpdatedAt = cached.updatedAt
 }
 
-async function loadRangeData() {
-  if (!(await ensureAuthReady())) return
-  await Promise.all([
-    loadList(trend, () => fetchReportPlayTrend(trendDaysParam())),
-    loadList(hourly, () => fetchReportHourlyDistribution(selectedDays.value)),
-    loadList(topUsers, () => fetchReportTopUsers({ days: selectedDays.value, limit: 10 })),
-    loadTopMedia(),
-    loadList(resolutions, () => fetchReportResolutionDistribution(selectedDays.value))
-  ])
+function restoreList<T>(state: ListState<T>, key: string): boolean {
+  const cached = readSuccessfulData<T[]>(key)
+  if (!cached || !Array.isArray(cached.data)) return false
+  state.items = cached.data
+  state.hasLoaded = true
+  state.lastUpdatedAt = cached.updatedAt
+  return true
+}
+
+function activateListRange<T>(state: ListState<T>, key: string): void {
+  if (restoreList(state, key)) return
+  state.items = []
+  state.hasLoaded = false
+  state.lastUpdatedAt = null
+  state.error = ''
 }
 
 async function loadTopMedia() {
   if (!(await ensureAuthReady())) return
-  await loadList(topMedia, () => fetchReportTopMedia({ days: selectedDays.value, limit: 10, mode: topMediaMode.value }))
+  const key = reportCacheKey('topMedia', topMediaDays.value, topMediaMode.value)
+  activateListRange(topMedia, key)
+  await loadList(
+    topMedia,
+    () => fetchReportTopMedia({ days: topMediaDays.value, limit: 10, mode: topMediaMode.value }),
+    key
+  )
+}
+
+async function loadHourly() {
+  if (!(await ensureAuthReady())) return
+  const key = reportCacheKey('hourly', hourlyDays.value)
+  activateListRange(hourly, key)
+  await loadList(hourly, () => fetchReportHourlyDistribution(hourlyDays.value), key)
+}
+
+async function loadTopUsers() {
+  if (!(await ensureAuthReady())) return
+  const key = reportCacheKey('topUsers', topUsersDays.value)
+  activateListRange(topUsers, key)
+  await loadList(topUsers, () => fetchReportTopUsers({ days: topUsersDays.value, limit: 10 }), key)
+}
+
+async function loadResolutions() {
+  if (!(await ensureAuthReady())) return
+  const key = reportCacheKey('resolutions', resolutionDays.value)
+  activateListRange(resolutions, key)
+  await loadList(resolutions, () => fetchReportResolutionDistribution(resolutionDays.value), key)
 }
 
 async function loadAll() {
   if (!(await ensureAuthReady())) return
   await Promise.all([
-    loadDetail(overview, fetchReportOverview),
-    loadRangeData(),
-    loadList(mediaTypes, fetchReportMediaTypeDistribution),
-    loadList(favorites, async () => (await fetchFavorites({ page: 1, page_size: 10 })).items)
+    loadDetail(overview, fetchReportOverview, reportCacheKey('overview')),
+    loadList(trend, () => fetchReportPlayTrend(365), reportCacheKey('trend', '365')),
+    loadHourly(),
+    loadTopUsers(),
+    loadTopMedia(),
+    loadResolutions(),
+    loadList(mediaTypes, fetchReportMediaTypeDistribution, reportCacheKey('mediaTypes')),
+    loadList(favorites, async () => (await fetchFavorites({ page: 1, page_size: 10 })).items, reportCacheKey('favorites'))
   ])
 }
 
@@ -434,11 +489,18 @@ function panelStatus(state: { loading: boolean; hasLoaded: boolean; lastUpdatedA
   return ''
 }
 
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return '报表数据加载失败'
+function restoreReportsCache(): void {
+  restoreDetail(overview, reportCacheKey('overview'))
+  restoreList(trend, reportCacheKey('trend', '365'))
+  restoreList(hourly, reportCacheKey('hourly', hourlyDays.value))
+  restoreList(topUsers, reportCacheKey('topUsers', topUsersDays.value))
+  restoreList(topMedia, reportCacheKey('topMedia', topMediaDays.value, topMediaMode.value))
+  restoreList(resolutions, reportCacheKey('resolutions', resolutionDays.value))
+  restoreList(mediaTypes, reportCacheKey('mediaTypes'))
+  restoreList(favorites, reportCacheKey('favorites'))
 }
 
+restoreReportsCache()
 onMounted(loadAll)
 useRouteRefresh(loadAll)
 </script>
@@ -477,6 +539,19 @@ useRouteRefresh(loadAll)
   gap: 12px;
 }
 
+.panel-heading-meta,
+.panel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.period-select { width: 88px; }
+
 .panel-note {
   margin-bottom: 10px;
   color: var(--app-muted);
@@ -508,10 +583,10 @@ useRouteRefresh(loadAll)
 
 .inline-error {
   padding: 10px 12px;
-  border: 1px solid #f5c2c7;
+  border: 1px solid var(--app-error-border);
   border-radius: 8px;
-  background: #fff1f2;
-  color: #b42318;
+  background: var(--app-error-bg);
+  color: var(--app-error-text);
 }
 
 .inline-warning,
@@ -523,15 +598,15 @@ useRouteRefresh(loadAll)
 }
 
 .inline-warning {
-  border: 1px solid #fed7aa;
-  background: #fff7ed;
-  color: #9a3412;
+  border: 1px solid var(--app-warning-border);
+  background: var(--app-warning-bg);
+  color: var(--app-warning-text);
 }
 
 .inline-updating {
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border: 1px solid var(--app-updating-border);
+  background: var(--app-updating-bg);
+  color: var(--app-updating-text);
 }
 
 .distribution-row {
@@ -544,7 +619,7 @@ useRouteRefresh(loadAll)
 
 .distribution-name,
 .distribution-count {
-  color: #4b5563;
+  color: var(--app-text);
   font-size: 13px;
 }
 
@@ -560,42 +635,21 @@ useRouteRefresh(loadAll)
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #edf1f7;
+  background: var(--app-bar-track);
 }
 
 .bar-fill {
   height: 100%;
   border-radius: inherit;
-  background: #2563eb;
+  background: var(--app-accent);
 }
 
 .bar-fill.alt {
-  background: #059669;
+  background: var(--app-success);
 }
 
 .bar-fill.warm {
-  background: #d97706;
-}
-
-[data-theme='dark'] .distribution-name,
-[data-theme='dark'] .distribution-count {
-  color: #c7d0df;
-}
-
-[data-theme='dark'] .inline-warning {
-  border-color: #7c2d12;
-  background: #2f1d12;
-  color: #fdba74;
-}
-
-[data-theme='dark'] .inline-updating {
-  border-color: #1d4ed8;
-  background: #13233f;
-  color: #93c5fd;
-}
-
-[data-theme='dark'] .bar-track {
-  background: #263149;
+  background: var(--app-data-3);
 }
 
 @media (max-width: 900px) {
@@ -621,6 +675,13 @@ useRouteRefresh(loadAll)
   .panel-title-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .panel-controls,
+  .panel-heading-meta {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
   }
 }
 </style>

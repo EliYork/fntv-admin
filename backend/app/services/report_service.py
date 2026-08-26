@@ -75,7 +75,7 @@ def overview(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
         }
 
 
-def play_trend(days: int | str | None = 30, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
+def play_trend(days: int | str | None = 365, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:
     clean_days = MAX_TREND_DAYS if days == "all" else normalize_days(days, max_days=MAX_TREND_DAYS)
     assert isinstance(clean_days, int)
     with _readonly_connection(conn) as active_conn:

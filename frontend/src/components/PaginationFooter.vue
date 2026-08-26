@@ -33,7 +33,7 @@ const emit = defineEmits<{
   display: flex;
   justify-content: flex-end;
   padding: 12px 16px;
-  border-top: 1px solid #edf0f5;
+  border-top: 1px solid var(--app-border-soft);
 }
 
 @media (max-width: 760px) {

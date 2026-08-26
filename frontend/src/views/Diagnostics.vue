@@ -201,7 +201,7 @@
     </div>
 
     <el-dialog v-model="copyDialogVisible" title="手动复制诊断信息" width="560px" @opened="selectCopyText">
-      <p style="margin-bottom: 8px; color: #e6a23c; font-size: 13px;">浏览器限制了自动复制，请按 Ctrl+C 手动复制</p>
+      <p class="copy-warning">浏览器限制了自动复制，请按 Ctrl+C 手动复制</p>
       <el-input ref="copyTextareaRef" v-model="copyText" type="textarea" :rows="16" readonly />
       <template #footer>
         <el-button @click="copyDialogVisible = false">关闭</el-button>

@@ -27,6 +27,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAuthStatus, initAdmin } from '../api/auth'
+import { userFacingErrorMessage } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -73,7 +74,7 @@ async function submit() {
     await auth.login(form.username, form.password)
     await router.push((route.query.redirect as string) || '/dashboard')
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '操作失败'
+    error.value = userFacingErrorMessage(err, '登录失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -88,14 +89,14 @@ onMounted(loadStatus)
   display: grid;
   place-items: center;
   padding: 24px;
-  background: linear-gradient(180deg, #edf4ff 0%, #f8fafc 50%, #f5f7fb 100%);
+  background: linear-gradient(180deg, var(--app-surface-soft) 0%, var(--app-bg) 55%, var(--app-surface-strong) 100%);
 }
 
 .login-panel {
   width: min(420px, 100%);
-  border: 1px solid #dde3ee;
+  border: 1px solid var(--app-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--app-surface);
   padding: 28px;
 }
 
@@ -106,7 +107,7 @@ h1 {
 
 p {
   margin: 8px 0 22px;
-  color: #687182;
+  color: var(--app-muted);
 }
 
 .submit-button {

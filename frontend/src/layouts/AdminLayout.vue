@@ -10,20 +10,20 @@
       </button>
 
       <div class="topbar-actions">
-        <el-tooltip v-if="route.path === '/dashboard' && dashboardFreshness" :content="dashboardFreshness.partial ? '部分数据可能来自上次成功更新' : '当前页面展示数据最后一次成功更新的时间'" placement="bottom">
+        <AppTooltip v-if="route.path === '/dashboard' && dashboardFreshness" :content="dashboardFreshness.partial ? '部分数据可能来自上次成功更新' : '当前页面展示数据最后一次成功更新的时间'" placement="bottom">
           <time class="data-freshness" :datetime="new Date(dashboardFreshness.updatedAt).toISOString()">
             <span class="freshness-full">数据更新于 {{ formattedDashboardFreshness }}</span>
             <span class="freshness-compact">更新 {{ formattedDashboardFreshness.slice(11) }}</span>
             <span class="freshness-tiny">{{ formattedDashboardFreshness.slice(11) }}</span>
           </time>
-        </el-tooltip>
-        <el-tooltip :content="`最近检查：${refreshedAt}`" placement="bottom">
+        </AppTooltip>
+        <AppTooltip :content="`最近检查：${refreshedAt}`" placement="bottom">
           <span class="database-status" :class="`is-${databaseStatusType}`" role="status">
             <i aria-hidden="true"></i>
             <span class="status-full">{{ databaseStatusLabel }}</span>
             <span class="status-compact">{{ databaseStatusCompactLabel }}</span>
           </span>
-        </el-tooltip>
+        </AppTooltip>
 
         <el-button class="toolbar-button refresh-button" text :icon="Refresh" aria-label="刷新当前页面数据" @click="refreshCurrentPage">
           <span class="button-label">刷新</span>
@@ -114,6 +114,7 @@ import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { formatInstant } from '../utils/applicationTime'
 import { readSuccessfulData } from '../utils/successfulDataCache'
+import AppTooltip from '../components/AppTooltip.vue'
 
 interface DashboardFreshness {
   updatedAt: number

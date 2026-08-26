@@ -24,12 +24,39 @@
   --app-error-bg: #f8e9e5;
   --app-error-border: #e7bbb0;
   --app-error-text: #913523;
+  --app-warning-bg: #fff6e7;
+  --app-warning-border: #e8c58b;
+  --app-warning-text: #8a5a13;
+  --app-updating-bg: #f5ebe7;
+  --app-updating-border: #dfb6aa;
+  --app-updating-text: #8d402d;
+  --app-overlay: #fbfbf8;
+  --app-tooltip-shadow: 0 10px 24px rgba(42, 34, 30, 0.14);
   color: var(--app-text);
   background: var(--app-bg);
   font-family: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   letter-spacing: 0;
-  --el-color-primary: #b74d32;
+  --el-color-primary: var(--app-accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--app-accent) 70%, var(--app-surface));
+  --el-color-primary-light-5: color-mix(in srgb, var(--app-accent) 50%, var(--app-surface));
+  --el-color-primary-light-7: color-mix(in srgb, var(--app-accent) 30%, var(--app-surface));
+  --el-color-primary-light-8: color-mix(in srgb, var(--app-accent) 20%, var(--app-surface));
+  --el-color-primary-light-9: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+  --el-color-primary-dark-2: color-mix(in srgb, var(--app-accent) 80%, #000);
+  --el-bg-color: var(--app-surface);
+  --el-bg-color-overlay: var(--app-overlay);
+  --el-fill-color-blank: var(--app-surface);
+  --el-fill-color-light: var(--app-surface-soft);
+  --el-fill-color: var(--app-surface-strong);
+  --el-border-color: var(--app-border);
+  --el-border-color-light: var(--app-border-soft);
+  --el-border-color-hover: var(--app-accent);
+  --el-text-color-primary: var(--app-title);
+  --el-text-color-regular: var(--app-text);
+  --el-text-color-secondary: var(--app-muted);
+  --el-mask-color: color-mix(in srgb, var(--app-bg) 72%, transparent);
+  --el-box-shadow-light: var(--app-tooltip-shadow);
 }
 
 * {
@@ -76,8 +103,16 @@ body {
   --app-error-bg: #3a2420;
   --app-error-border: #75483e;
   --app-error-text: #f1a38e;
+  --app-warning-bg: #33281a;
+  --app-warning-border: #72562c;
+  --app-warning-text: #e6bd78;
+  --app-updating-bg: #30231f;
+  --app-updating-border: #70483d;
+  --app-updating-text: #e6a18f;
+  --app-overlay: #232824;
+  --app-tooltip-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
   --el-bg-color: var(--app-surface);
-  --el-bg-color-overlay: #1d242c;
+  --el-bg-color-overlay: var(--app-overlay);
   --el-fill-color-blank: var(--app-surface);
   --el-fill-color-light: #252925;
   --el-fill-color: #30352f;
@@ -91,7 +126,7 @@ body {
   --el-menu-active-color: var(--app-accent);
   --el-menu-hover-bg-color: #252925;
   --el-table-header-bg-color: #252925;
-  --el-color-primary: #e07a5f;
+  --el-color-primary: var(--app-accent);
   color: var(--app-text);
   background: var(--app-bg);
 }
@@ -234,8 +269,53 @@ button,
   color: var(--app-error-text);
 }
 
+.copy-warning {
+  margin: 0 0 8px;
+  color: var(--app-warning-text);
+  font-size: 13px;
+}
+
+.el-button--primary {
+  --el-button-text-color: var(--app-on-accent);
+  --el-button-hover-text-color: var(--app-on-accent);
+  --el-button-active-text-color: var(--app-on-accent);
+}
+
+.el-radio-button.is-active .el-radio-button__inner,
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  color: var(--app-on-accent);
+}
+
 [data-theme='dark'] .empty-panel {
-  color: #a7b0c0;
+  color: var(--app-muted);
+}
+
+.el-popper.is-light {
+  border-color: var(--app-border);
+  background: var(--app-overlay);
+  box-shadow: var(--app-tooltip-shadow);
+  color: var(--app-text);
+}
+
+.el-popper.is-light > .el-popper__arrow::before {
+  border-color: var(--app-border);
+  background: var(--app-overlay);
+}
+
+.el-select-dropdown__item.is-selected,
+.el-dropdown-menu__item:not(.is-disabled):focus,
+.el-dropdown-menu__item:not(.is-disabled):hover {
+  color: var(--app-accent);
+}
+
+.el-segmented {
+  --el-segmented-item-selected-color: var(--app-on-accent);
+  --el-segmented-item-selected-bg-color: var(--app-accent);
+}
+
+.el-pagination.is-background .el-pager li.is-active {
+  background-color: var(--app-accent);
+  color: var(--app-on-accent);
 }
 
 [data-theme='dark'] .el-table,

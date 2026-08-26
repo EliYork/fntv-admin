@@ -102,6 +102,12 @@ export function getLastAuthError() {
   }
 }
 
+export function userFacingErrorMessage(error: unknown, fallback = '操作失败，请稍后重试'): string {
+  const raw = error instanceof Error ? error.message.trim() : ''
+  if (!raw || /axios|network error|request failed|status code|sql(?:ite)?|econn|timeout|stack trace/i.test(raw)) return fallback
+  return raw
+}
+
 function rememberAuthError(url: string | undefined, status: number | undefined): void {
   if (!status) return
   lastAuthErrorEndpoint = url || ''

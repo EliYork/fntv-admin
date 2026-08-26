@@ -29,6 +29,7 @@
                 :aria-label="cell.item ? `${cell.date} 播放 ${cell.item.play_count} 次` : undefined"
                 @mouseenter="showDateTooltip($event, cell)"
                 @mousemove="moveTooltip($event)"
+                @mouseleave="hideTooltip"
               ></span>
             </template>
           </div>
@@ -56,6 +57,7 @@
               :aria-label="`${cell.label} 播放 ${cell.play_count} 次`"
               @mouseenter="showWeeklyTooltip($event, cell)"
               @mousemove="moveTooltip($event)"
+              @mouseleave="hideTooltip"
             ></span>
           </div>
         </div>
@@ -73,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import EmptyState from './EmptyState.vue'
 import type { PlayTrendItem, WeeklyHourlyDistributionItem } from '../api/modules'
 
@@ -111,6 +113,8 @@ const tooltip = reactive({
   watchedCount: null as number | null,
   activeUserCount: null as number | null
 })
+const hoverCapable = ref(true)
+let hoverQuery: MediaQueryList | null = null
 
 const availableModes = computed(() => props.modes.filter((mode) => mode === 'date' || mode === 'weekhour'))
 const sortedDateItems = computed(() => [...props.dateItems].sort((a, b) => a.date.localeCompare(b.date)))
@@ -121,6 +125,7 @@ const weeklyLevels = computed(() => quantileLevels(props.weeklyItems.map((item) 
 
 watch(availableModes, (modes) => {
   if (!modes.includes(selectedMode.value)) selectedMode.value = modes[0] || 'date'
+  hideTooltip()
 }, { immediate: true })
 
 function quantileLevels(values: number[]): number[] {
@@ -197,6 +202,7 @@ function addDays(date: Date, days: number): Date {
 function mondayIndex(date: Date): number { return (date.getDay() + 6) % 7 }
 
 function showDateTooltip(event: MouseEvent, cell: HeatmapCell) {
+  if (!hoverCapable.value) return
   if (!cell.item) return hideTooltip()
   const date = parseDateKey(cell.date)
   tooltip.visible = true
@@ -208,6 +214,7 @@ function showDateTooltip(event: MouseEvent, cell: HeatmapCell) {
 }
 
 function showWeeklyTooltip(event: MouseEvent, cell: WeeklyHourlyDistributionItem) {
+  if (!hoverCapable.value) return
   tooltip.visible = true
   tooltip.title = cell.label
   tooltip.playCount = cell.play_count
@@ -223,6 +230,19 @@ function moveTooltip(event: MouseEvent) {
 }
 
 function hideTooltip() { tooltip.visible = false }
+
+function updateHoverCapability(event?: MediaQueryListEvent): void {
+  hoverCapable.value = event?.matches ?? hoverQuery?.matches ?? true
+  if (!hoverCapable.value) hideTooltip()
+}
+
+onMounted(() => {
+  hoverQuery = window.matchMedia('(hover: hover) and (pointer: fine)')
+  updateHoverCapability()
+  hoverQuery.addEventListener('change', updateHoverCapability)
+})
+
+onUnmounted(() => hoverQuery?.removeEventListener('change', updateHoverCapability))
 </script>
 
 <style scoped>
@@ -244,7 +264,7 @@ function hideTooltip() { tooltip.visible = false }
 .weekhour-layout { display: flex; gap: 10px; width: max-content; }
 .weekhour-weekdays { display: grid; grid-template-rows: repeat(7, 18px); gap: 4px; width: 20px; color: var(--app-muted); font-size: 9px; line-height: 18px; text-align: right; }
 .weekhour-grid { display: grid; grid-template-columns: repeat(24, 18px); grid-template-rows: repeat(7, 18px); grid-auto-flow: row; gap: 4px; }
-.heatmap-tooltip { position: fixed; z-index: 4000; display: grid; gap: 4px; width: 194px; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-surface); box-shadow: 0 12px 28px rgba(18, 22, 20, 0.14); color: var(--app-muted-strong); font-size: 12px; pointer-events: none; }
+.heatmap-tooltip { position: fixed; z-index: 4000; display: grid; gap: 4px; width: 194px; padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-overlay); box-shadow: var(--app-tooltip-shadow); color: var(--app-muted-strong); font-size: 12px; pointer-events: none; }
 .heatmap-tooltip strong { color: var(--app-title); font-size: 12px; }
 
 @media (max-width: 760px) {

@@ -18,6 +18,12 @@ class NormalizeReportDaysTests(unittest.TestCase):
             items = play_trend("365", conn=connection)
         self.assertEqual(len(items), MAX_TREND_DAYS)
 
+    def test_play_trend_defaults_to_full_year(self) -> None:
+        with sqlite3.connect(":memory:") as connection:
+            connection.row_factory = sqlite3.Row
+            items = play_trend(conn=connection)
+        self.assertEqual(len(items), MAX_TREND_DAYS)
+
 
 if __name__ == "__main__":
     unittest.main()

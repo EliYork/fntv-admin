@@ -15,7 +15,7 @@ def overview():
 
 
 @router.get("/play-trend")
-def play_trend(days: str = Query(default="30")):
+def play_trend(days: str = Query(default="365")):
     return ok(report_service.play_trend(days=days))
 
 

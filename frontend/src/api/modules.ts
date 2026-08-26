@@ -204,7 +204,7 @@ export function fetchReportOverview() {
   return getApi<ReportOverview>('/reports/overview', undefined, { suppressGlobalError: true })
 }
 
-export function fetchReportPlayTrend(days: number | string = 30) {
+export function fetchReportPlayTrend(days: number | string = 365) {
   return getApi<PlayTrendItem[]>('/reports/play-trend', { days }, { suppressGlobalError: true })
 }
 
