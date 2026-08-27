@@ -32,7 +32,7 @@
               <div class="hour-bar-zone">
                 <span class="hour-bar" :style="{ height: `${hourBarHeight(item.play_count)}%` }"></span>
               </div>
-              <span class="hour-tick">{{ visibleHourTick(item.hour) }}</span>
+              <span class="hour-tick">{{ item.hour }}</span>
             </div>
           </AppTooltip>
         </div>
@@ -209,10 +209,6 @@ function hourBarHeight(value: number): number {
 
 function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`
-}
-
-function visibleHourTick(hour: number): string {
-  return [0, 3, 6, 9, 12, 15, 18, 21, 23].includes(hour) ? String(hour) : ''
 }
 
 function periodLabel(period: PeriodRange): string {
