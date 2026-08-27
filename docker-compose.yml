@@ -27,3 +27,5 @@ services:
       BACKUP_DIR: /data/backup
       DEFAULT_PAGE_SIZE: "20"
       LOG_RETENTION_DAYS: "14"
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}

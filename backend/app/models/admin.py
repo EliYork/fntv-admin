@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Integer, Text, UniqueConstraint
+from sqlalchemy import Integer, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -18,6 +18,7 @@ class AdminUser(Base):
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
     last_login_at: Mapped[int] = mapped_column(Integer, nullable=True)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
 
 
 class Setting(Base):

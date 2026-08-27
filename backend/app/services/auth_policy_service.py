@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from fastapi import Request
@@ -80,35 +82,132 @@ def auth_policy_payload(policy: AuthPolicy, request: Request | Any | None = None
         "local_auth_required": policy.local_auth_required,
         "remote_access_policy": policy.remote_access_policy,
         "trust_proxy_headers": settings.trust_proxy_headers,
+        "trusted_proxies_configured": bool(_trusted_proxy_networks()),
         "is_local_request": is_local,
         "client_ip": client_ip,
     }
 
 
 def request_is_local(request: Request | Any) -> tuple[bool, str | None]:
-    client_ip = client_ip_from_request(request)
+    client_ip, source_is_reliable = _resolve_client_ip(request)
     if not client_ip:
         return False, None
     try:
         address = ipaddress.ip_address(client_ip)
     except ValueError:
         return False, client_ip
-    return any(address in network for network in LOCAL_NETWORKS), client_ip
+    return source_is_reliable and any(address in network for network in LOCAL_NETWORKS), client_ip
 
 
 def client_ip_from_request(request: Request | Any) -> str | None:
-    if settings.trust_proxy_headers:
-        forwarded = _header(request, "x-forwarded-for")
-        if forwarded:
-            first = forwarded.split(",", 1)[0].strip()
-            if first:
-                return first
-        real_ip = _header(request, "x-real-ip")
-        if real_ip:
-            return real_ip.strip()
+    return _resolve_client_ip(request)[0]
+
+
+def _resolve_client_ip(request: Request | Any) -> tuple[str | None, bool]:
+    peer = _peer_address(request)
+    proxy_header_present = any(_header(request, name) for name in ("forwarded", "x-forwarded-for", "x-real-ip"))
+    if peer is None:
+        return None, False
+    if not settings.trust_proxy_headers:
+        return str(peer), not proxy_header_present
+    trusted_networks = _trusted_proxy_networks()
+    if not _address_in_networks(peer, trusted_networks):
+        return str(peer), not proxy_header_present
+    chain = _forwarded_chain(request)
+    if not chain:
+        return str(peer), False
+    current = peer
+    for index in range(len(chain) - 1, -1, -1):
+        candidate = chain[index]
+        if not _address_in_networks(current, trusted_networks):
+            break
+        current = candidate
+        if not _address_in_networks(current, trusted_networks):
+            ambiguous_private_hop = index > 0 and any(
+                current in network for network in LOCAL_NETWORKS if current.version == network.version
+            )
+            return str(current), not ambiguous_private_hop
+    return str(current), True
+
+
+def _peer_address(request: Request | Any) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     client = getattr(request, "client", None)
     host = getattr(client, "host", None)
-    return str(host) if host else None
+    if not host:
+        return None
+    return _parse_ip(str(host))
+
+
+def _trusted_proxy_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    return _parse_trusted_proxy_networks(settings.trusted_proxies.strip())
+
+
+@lru_cache(maxsize=32)
+def _parse_trusted_proxy_networks(configured: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for raw_value in re.split(r"[,\s]+", configured):
+        if not raw_value:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(raw_value, strict=False))
+        except ValueError:
+            logger.warning("ignored invalid TRUSTED_PROXIES entry")
+    return tuple(networks)
+
+
+def _forwarded_chain(request: Request | Any) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address] | None:
+    forwarded = _header(request, "forwarded")
+    if forwarded:
+        values: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+        for element in re.split(r',(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)', forwarded):
+            parameters = [part.strip() for part in element.split(";")]
+            raw_for = next((part.split("=", 1)[1] for part in parameters if part.lower().startswith("for=")), None)
+            address = _parse_forwarded_node(raw_for) if raw_for is not None else None
+            if address is None:
+                return None
+            values.append(address)
+        return values or None
+    x_forwarded_for = _header(request, "x-forwarded-for")
+    if x_forwarded_for:
+        values = [_parse_forwarded_node(part) for part in x_forwarded_for.split(",")]
+        return [value for value in values if value is not None] if values and all(values) else None
+    real_ip = _header(request, "x-real-ip")
+    if real_ip:
+        address = _parse_forwarded_node(real_ip)
+        return [address] if address is not None else None
+    return None
+
+
+def _parse_forwarded_node(value: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    if value is None:
+        return None
+    node = value.strip().strip('"')
+    if not node or node.lower() == "unknown" or node.startswith("_"):
+        return None
+    if node.startswith("["):
+        closing = node.find("]")
+        if closing < 0:
+            return None
+        node = node[1:closing]
+    elif node.count(":") == 1:
+        host, port = node.rsplit(":", 1)
+        if port.isdigit():
+            node = host
+    return _parse_ip(node)
+
+
+def _parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(value)
+    except ValueError:
+        return None
+
+
+def _address_in_networks(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...],
+) -> bool:
+    return any(address.version == network.version and address in network for network in networks)
 
 
 def enforce_remote_access(policy: AuthPolicy, request: Request | Any) -> tuple[bool, str | None]:

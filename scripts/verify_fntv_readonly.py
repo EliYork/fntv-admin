@@ -16,7 +16,9 @@ ALLOWED_FILES = {
     ROOT / "backend/app/db/fntv_readonly.py",
     ROOT / "backend/app/models/admin.py",
     ROOT / "backend/app/db/admin_db.py",
+    ROOT / "backend/app/db/migrations.py",
     ROOT / "backend/app/core/security.py",
+    ROOT / "backend/app/services/initialization_service.py",
     ROOT / "scripts/verify_fntv_readonly.py",
 }
 

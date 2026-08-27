@@ -32,4 +32,4 @@ RUN mkdir -p /data/logs /data/cache /data/backup /fntv
 
 EXPOSE 8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]

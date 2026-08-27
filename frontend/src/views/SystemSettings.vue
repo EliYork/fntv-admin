@@ -46,7 +46,7 @@
         <div class="settings-note">
           <div>{{ accessControlSummary }}</div>
           <div>当前请求：{{ authPolicy?.is_local_request ? '本地访问' : '外部访问或未知' }}</div>
-          <div>代理头：{{ authPolicy?.trust_proxy_headers ? '已信任 X-Forwarded-For / X-Real-IP' : '未信任代理头' }}</div>
+          <div>代理头：{{ authPolicy?.trust_proxy_headers && authPolicy?.trusted_proxies_configured ? '仅信任已配置代理链' : '未启用可信代理解析' }}</div>
         </div>
         <div class="settings-actions">
           <el-button type="primary" :loading="authPolicySaving" @click="saveAuthPolicy">保存访问控制</el-button>

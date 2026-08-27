@@ -13,6 +13,10 @@
         <el-form-item label="密码">
           <el-input v-model="form.password" type="password" show-password autocomplete="current-password" />
         </el-form-item>
+        <el-form-item v-if="!initialized" label="初始化凭据">
+          <el-input v-model="form.initializationToken" type="password" show-password autocomplete="off" />
+          <span class="field-help">在 NAS 终端运行 <code>docker compose exec fntv-admin cat /data/init-admin.token</code> 获取一次性凭据。</span>
+        </el-form-item>
         <el-button type="primary" class="submit-button" :loading="loading" @click="submit">
           {{ initialized ? '登录' : '创建管理员' }}
         </el-button>
@@ -36,7 +40,7 @@ const auth = useAuthStore()
 const initialized = ref(true)
 const loading = ref(false)
 const error = ref('')
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '', password: '', initializationToken: '' })
 
 async function loadStatus() {
   if (auth.isAuthenticated) {
@@ -60,6 +64,10 @@ async function submit() {
     error.value = '管理员密码至少需要 8 位'
     return
   }
+  if (!initialized.value && !form.initializationToken.trim()) {
+    error.value = '请输入初始化凭据'
+    return
+  }
   if (initialized.value && !form.password) {
     error.value = '请输入密码'
     return
@@ -68,8 +76,9 @@ async function submit() {
   error.value = ''
   try {
     if (!initialized.value) {
-      await initAdmin(form.username, form.password)
+      await initAdmin(form.username, form.password, form.initializationToken)
       initialized.value = true
+      form.initializationToken = ''
     }
     await auth.login(form.username, form.password)
     await router.push((route.query.redirect as string) || '/dashboard')
@@ -113,5 +122,13 @@ p {
 .submit-button {
   width: 100%;
   margin-bottom: 14px;
+}
+
+.field-help {
+  margin-top: 6px;
+  color: var(--app-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 </style>

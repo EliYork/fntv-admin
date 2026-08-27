@@ -56,6 +56,7 @@ services:
       DEFAULT_PAGE_SIZE: "20"
       LOG_RETENTION_DAYS: "14"
       TRUST_PROXY_HEADERS: "false"
+      TRUSTED_PROXIES: ""
       SNAPSHOT_ENABLED: "false"
       ACTIVE_WATCH_WINDOW_SECONDS: "300"
 ```
@@ -89,7 +90,7 @@ http://飞牛IP:18080
 
 默认宿主机端口为 `18080`，容器内部仍监听 `8080`。如需避开其他服务，可在 `.env` 中设置 `FNTV_ADMIN_PORT`（例如测试实例使用 `18081`），无需修改容器端口。
 
-首次进入时创建管理员账号。管理员密码只会以 hash 形式写入 `/data/admin.db`。
+首次进入时创建管理员账号。页面会要求一次性初始化凭据；在 Compose 文件所在目录运行 `docker compose exec fntv-admin cat /data/init-admin.token` 获取。凭据由容器首次启动时随机生成，成功创建管理员后立即删除，不会写入普通日志。管理员密码只会以 hash 形式写入 `/data/admin.db`。
 
 未显式设置 `APP_SECRET_KEY` 时，应用会在 `/data/admin.db` 的独立内部密钥表中自动生成并持久化强随机 JWT 密钥（不会通过设置 API 返回）。也可以通过环境变量提供至少 32 个字符的随机密钥；公开占位值和过短密钥不会被用于签名。
 
@@ -107,7 +108,7 @@ TRUST_PROXY_HEADERS=false
 
 本地来源包括 `127.0.0.1`、`::1`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`fc00::/7`、`fe80::/10`。如果通过公网、DDNS 或反向代理访问，建议保持本地和外部都需要登录，或将外部访问设为禁止。
 
-默认不信任 `X-Forwarded-For` / `X-Real-IP`。只有确认反向代理会正确覆盖这些请求头时，才谨慎设置 `TRUST_PROXY_HEADERS=true`，否则可能被伪造来源绕过本地/外部判断。
+默认不信任 `Forwarded` / `X-Forwarded-For` / `X-Real-IP`。通过反向代理并需要区分本地与外部来源时，必须同时设置 `TRUST_PROXY_HEADERS=true` 和 `TRUSTED_PROXIES`（逗号分隔的代理 IP/CIDR，例如 `127.0.0.1/32,172.18.0.0/16`）。只有直接 TCP peer 命中可信代理范围时才解析代理链；其他客户端提供的代理头会被拒绝用于本地免登录判断。代理本身也必须覆盖或正确追加来源头，来源不确定时应用会要求登录。
 
 ## 镜像地址
 

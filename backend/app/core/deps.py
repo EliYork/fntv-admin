@@ -31,13 +31,16 @@ def get_current_admin(
         logger.info("auth rejected: path=%s status=401 code=AUTH_REQUIRED client=%s", path, client_ip)
         raise AppError("AUTH_REQUIRED", "请先登录", 401)
     try:
-        user_id = decode_access_token(credentials.credentials)
+        user_id, token_version = decode_access_token(credentials.credentials)
     except AppError as exc:
         logger.info("auth rejected: path=%s status=%s code=%s client=%s", path, exc.status_code, exc.code, client_ip)
         raise
     user = db.get(AdminUser, int(user_id)) if user_id.isdigit() else None
     if user is None:
         logger.info("auth rejected: path=%s status=401 code=AUTH_REQUIRED client=%s reason=user_not_found", path, client_ip)
+        raise AppError("AUTH_REQUIRED", "请先登录", 401)
+    if user.token_version != token_version:
+        logger.info("auth rejected: path=%s status=401 code=AUTH_REQUIRED client=%s reason=token_version", path, client_ip)
         raise AppError("AUTH_REQUIRED", "请先登录", 401)
     return auth_policy_service.admin_principal(user, policy, is_local_request=is_local, client_ip=client_ip)
 

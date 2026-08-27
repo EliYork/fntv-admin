@@ -63,6 +63,7 @@ BACKUP_DIR=/data/backup
 DEFAULT_PAGE_SIZE=20
 LOG_RETENTION_DAYS=14
 TRUST_PROXY_HEADERS=false
+TRUSTED_PROXIES=
 SNAPSHOT_ENABLED=false
 ACTIVE_WATCH_WINDOW_SECONDS=300
 ```
@@ -75,7 +76,7 @@ ACTIVE_WATCH_WINDOW_SECONDS=300
 http://飞牛IP:18080
 ```
 
-首次进入需要初始化管理员账号。
+首次进入需要初始化管理员账号。先在 Compose 文件目录运行 `docker compose exec fntv-admin cat /data/init-admin.token` 获取一次性初始化凭据；创建成功后凭据文件会自动删除。
 
 ## 访问控制建议
 
@@ -90,7 +91,7 @@ http://飞牛IP:18080
 
 外部访问设置为“禁止访问”后，非本地来源会返回 403。本地来源包括 `127.0.0.1`、`::1`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`fc00::/7`、`fe80::/10`。
 
-默认 `TRUST_PROXY_HEADERS=false`，不会信任 `X-Forwarded-For` / `X-Real-IP`。只有确认反向代理会正确覆盖这些请求头时，才谨慎改为 `true`，否则可能误判访问来源。
+默认 `TRUST_PROXY_HEADERS=false`，不会信任代理头。反向代理场景如需区分本地与外部来源，必须同时设置 `TRUST_PROXY_HEADERS=true` 和精确的 `TRUSTED_PROXIES` IP/CIDR；只有直接 peer 属于可信代理时才解析 `Forwarded` / `X-Forwarded-For` / `X-Real-IP`。代理必须覆盖或正确追加来源头，不要无条件信任所有来源。
 
 ## 部署方式 B：先拉取镜像再创建容器
 

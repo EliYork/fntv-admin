@@ -16,6 +16,7 @@ from app.core.errors import AppError
 from app.db.fntv_readonly import open_fntv_connection
 from app.db.schema_check import TableInfo, find_column, inspect_schema, quote_identifier
 from app.models import MediaProfile, UserProfile
+from app.utils.csv import sanitize_csv_text
 from app.utils.pagination import normalize_page
 from app.utils.time import application_now, application_timezone, application_timezone_name, format_timestamp, local_day_bounds, now_ts
 
@@ -373,18 +374,18 @@ def history_csv(filters: dict[str, Any] | None = None, conn: sqlite3.Connection 
     for item in page_data["items"]:
         writer.writerow(
             {
-                "id": item.get("id", ""),
-                "username": item.get("username", ""),
-                "display_title": item.get("display_title", ""),
+                "id": sanitize_csv_text(item.get("id", "")),
+                "username": sanitize_csv_text(item.get("username", "")),
+                "display_title": sanitize_csv_text(item.get("display_title", "")),
                 "started_at": item.get("started_at", ""),
                 "played_at": item.get("played_at", ""),
                 "position": format_duration(item.get("position_seconds")) if item.get("position_seconds") is not None else "",
                 "runtime": format_duration(item.get("runtime_seconds")) if item.get("runtime_seconds") is not None else "",
                 "progress_percent": item.get("progress_percent", ""),
-                "watched": item.get("watched_text", ""),
-                "resolution": item.get("resolution", ""),
-                "item_guid": item.get("item_guid", ""),
-                "user_guid": item.get("user_guid", ""),
+                "watched": sanitize_csv_text(item.get("watched_text", "")),
+                "resolution": sanitize_csv_text(item.get("resolution", "")),
+                "item_guid": sanitize_csv_text(item.get("item_guid", "")),
+                "user_guid": sanitize_csv_text(item.get("user_guid", "")),
             }
         )
     return output.getvalue()

@@ -8,6 +8,7 @@ from typing import Any
 from app.core.errors import AppError
 from app.db.fntv_readonly import open_fntv_connection
 from app.db.schema_check import TableInfo, find_column, find_table, inspect_schema, quote_identifier
+from app.utils.csv import sanitize_csv_text
 from app.utils.pagination import normalize_page
 
 
@@ -152,7 +153,15 @@ def history_csv() -> str:
     writer = csv.DictWriter(output, fieldnames=["id", "user", "title", "played_at", "progress", "watched"])
     writer.writeheader()
     for item in page_data["items"]:
-        writer.writerow(item)
+        writer.writerow(
+            {
+                **item,
+                "id": sanitize_csv_text(item.get("id", "")),
+                "user": sanitize_csv_text(item.get("user", "")),
+                "title": sanitize_csv_text(item.get("title", "")),
+                "watched": sanitize_csv_text(item.get("watched", "")),
+            }
+        )
     return output.getvalue()
 
 

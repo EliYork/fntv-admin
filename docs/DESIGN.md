@@ -506,7 +506,7 @@ RUN mkdir -p /data/logs /data/cache /data/backup /fntv
 
 EXPOSE 8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]
 ```
 
 ---
@@ -1213,7 +1213,7 @@ viewer：只读查看
 5. 错误信息不能泄露敏感路径和堆栈。
 6. 默认本地和外部访问都需要登录。
 7. 系统设置可开启本地访问免登录，但外部访问只能保持登录保护或设置为禁止访问。
-8. 默认不信任 `X-Forwarded-For` / `X-Real-IP`，只有 `TRUST_PROXY_HEADERS=true` 时才按代理头判断来源。
+8. 默认不信任 `Forwarded` / `X-Forwarded-For` / `X-Real-IP`；只有 `TRUST_PROXY_HEADERS=true` 且直接 TCP peer 命中 `TRUSTED_PROXIES` IP/CIDR 时，才从右向左跨越可信代理链。来源不确定时按外部请求处理。
 9. 公网、DDNS 或反向代理访问不建议关闭登录保护。
 
 ---

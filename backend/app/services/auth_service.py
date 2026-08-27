@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,8 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.models import AdminUser, AuditLog
 from app.schemas.auth import AdminUserOut, TokenOut
 from app.utils.time import now_ts
+
+_DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
 
 
 def admin_exists(db: Session) -> bool:
@@ -24,29 +28,11 @@ def admin_to_out(user: AdminUser) -> AdminUserOut:
     )
 
 
-def create_initial_admin(db: Session, username: str, password: str) -> AdminUserOut:
-    if admin_exists(db):
-        raise AppError("ADMIN_ALREADY_EXISTS", "管理员已初始化", 409)
-    now = now_ts()
-    user = AdminUser(
-        username=username.strip(),
-        password_hash=hash_password(password),
-        role="admin",
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(user)
-    db.flush()
-    add_audit_log(db, user.id, "init_admin", "admin_user", str(user.id), "initial admin created")
-    db.commit()
-    db.refresh(user)
-    return admin_to_out(user)
-
-
 def login(db: Session, username: str, password: str, ip_address: str | None, user_agent: str | None) -> TokenOut:
     user = db.scalar(select(AdminUser).where(AdminUser.username == username.strip()))
-    if user is None or not verify_password(password, user.password_hash):
-        add_audit_log(db, None, "login_failed", "admin_user", username.strip(), "invalid credentials", ip_address, user_agent)
+    password_valid = verify_password(password, user.password_hash if user is not None else _DUMMY_PASSWORD_HASH)
+    if user is None or not password_valid:
+        add_audit_log(db, None, "login_failed", "admin_user", safe_username(username), "invalid credentials", ip_address, user_agent)
         db.commit()
         raise AppError("INVALID_CREDENTIALS", "用户名或密码错误", 401)
     user.last_login_at = now_ts()
@@ -54,16 +40,19 @@ def login(db: Session, username: str, password: str, ip_address: str | None, use
     add_audit_log(db, user.id, "login", "admin_user", str(user.id), "admin login", ip_address, user_agent)
     db.commit()
     db.refresh(user)
-    return TokenOut(token=create_access_token(str(user.id)), user=admin_to_out(user))
+    return TokenOut(token=create_access_token(str(user.id), user.token_version), user=admin_to_out(user))
 
 
-def change_password(db: Session, user: AdminUser, old_password: str, new_password: str) -> None:
+def change_password(db: Session, user: AdminUser, old_password: str, new_password: str) -> TokenOut:
     if not verify_password(old_password, user.password_hash):
         raise AppError("INVALID_PASSWORD", "原密码错误", 400)
     user.password_hash = hash_password(new_password)
+    user.token_version += 1
     user.updated_at = now_ts()
     add_audit_log(db, user.id, "change_password", "admin_user", str(user.id), "password changed")
     db.commit()
+    db.refresh(user)
+    return TokenOut(token=create_access_token(str(user.id), user.token_version), user=admin_to_out(user))
 
 
 def add_audit_log(
@@ -89,3 +78,6 @@ def add_audit_log(
         )
     )
 
+
+def safe_username(username: str) -> str:
+    return "".join(character for character in username.strip() if character.isprintable())[:64]

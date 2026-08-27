@@ -103,7 +103,8 @@ export function getLastAuthError() {
 }
 
 export function userFacingErrorMessage(error: unknown, fallback = '操作失败，请稍后重试'): string {
-  const raw = error instanceof Error ? error.message.trim() : ''
+  const responseMessage = (error as { response?: { data?: { error?: { message?: unknown } } } }).response?.data?.error?.message
+  const raw = typeof responseMessage === 'string' ? responseMessage.trim() : error instanceof Error ? error.message.trim() : ''
   if (!raw || /axios|network error|request failed|status code|sql(?:ite)?|econn|timeout|stack trace/i.test(raw)) return fallback
   return raw
 }

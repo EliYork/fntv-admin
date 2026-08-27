@@ -38,13 +38,13 @@ def verify_password(password: str, password_hash: str) -> bool:
     return pwd_context.verify(password, password_hash)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, token_version: int = 1) -> str:
     expires = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload: dict[str, Any] = {"sub": subject, "exp": expires}
+    payload: dict[str, Any] = {"sub": subject, "ver": token_version, "exp": expires}
     return jwt.encode(payload, signing_key(), algorithm=ALGORITHM)
 
 
-def decode_access_token(token: str) -> str:
+def decode_access_token(token: str) -> tuple[str, int]:
     try:
         payload = jwt.decode(token, signing_key(), algorithms=[ALGORITHM])
     except jwt.PyJWTError as exc:
@@ -52,7 +52,10 @@ def decode_access_token(token: str) -> str:
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
         raise AppError("INVALID_TOKEN", "登录已失效，请重新登录", 401)
-    return subject
+    token_version = payload.get("ver", 1)
+    if not isinstance(token_version, int) or token_version < 1:
+        raise AppError("INVALID_TOKEN", "登录已失效，请重新登录", 401)
+    return subject, token_version
 
 
 def ensure_signing_key() -> None:

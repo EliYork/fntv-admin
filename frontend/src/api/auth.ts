@@ -15,6 +15,7 @@ export interface AdminUser {
 
 export interface AuthStatus {
   admin_initialized: boolean
+  initialization_token_required: boolean
 }
 
 export interface TokenPayload {
@@ -29,6 +30,7 @@ export interface AuthPolicy {
   local_auth_required: boolean
   remote_access_policy: RemoteAccessPolicy
   trust_proxy_headers: boolean
+  trusted_proxies_configured: boolean
   is_local_request?: boolean | null
   client_ip?: string | null
 }
@@ -47,8 +49,8 @@ export function fetchAuthStatus() {
   return getApi<AuthStatus>('/auth/status')
 }
 
-export function initAdmin(username: string, password: string) {
-  return postApi<{ user: AdminUser }>('/auth/init-admin', { username, password })
+export function initAdmin(username: string, password: string, initializationToken: string) {
+  return postApi<{ user: AdminUser }>('/auth/init-admin', { username, password, initialization_token: initializationToken })
 }
 
 export function login(username: string, password: string) {

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     log_retention_days: int = 14
     access_token_expire_minutes: int = 60 * 24
     trust_proxy_headers: bool = False
+    trusted_proxies: str = ""
     snapshot_enabled: bool = False
     snapshot_refresh_interval_seconds: int = 3600  # 0 = 禁用自动刷新（仅手动）
     active_watch_window_seconds: int = 300

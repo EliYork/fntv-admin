@@ -24,6 +24,7 @@ from app.db.migrations import run_migrations
 from app.db.schema_check import schema_diagnostics
 from app.models import Setting
 from app.services import fntv_schema_adapter
+from app.services.initialization_service import ensure_initialization_token
 from app.utils.time import now_ts
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ def startup_check() -> None:
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     run_migrations()
     ensure_signing_key()
+    ensure_initialization_token()
     if settings.fntv_db_path.exists():
         logger.info("fntv source database configured for readonly direct access")
     else:
