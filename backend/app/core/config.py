@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     trust_proxy_headers: bool = False
     trusted_proxies: str = ""
-    snapshot_enabled: bool = False
-    snapshot_refresh_interval_seconds: int = 3600  # 0 = 禁用自动刷新（仅手动）
+    snapshot_enabled: bool = True
+    snapshot_refresh_interval_seconds: int = 900  # 0 = 禁用自动刷新（仅手动）
     active_watch_window_seconds: int = 300
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

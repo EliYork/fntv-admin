@@ -124,7 +124,7 @@ CREATE
 
 代码层必须使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON`，并通过 `scripts/verify_fntv_readonly.py` 验证不写飞牛数据库。
 
-默认直接只读读取 `/fntv/trimmedia.db`。Phase 7C 允许可选 SQLite 快照读取，但默认关闭；快照只能写入 `/data/cache/trimmedia.snapshot.db`，源库连接仍必须 `mode=ro` + `PRAGMA query_only = ON`。快照失败必须自动 fallback 到源库只读直连，不允许导致页面白屏或容器重启。
+源库固定通过 SQLite `mode=ro` + `PRAGMA query_only = ON` 只读读取 `/fntv/trimmedia.db`。SQLite 快照读取默认开启，默认每 15 分钟按需自动刷新；快照只能写入 `/data/cache/trimmedia.snapshot.db`。`admin.db` 中用户已保存的快照开关和刷新间隔永远优先于项目默认，缺少的设置键才使用当前默认。快照失败必须自动 fallback 到源库只读直连，不允许导致页面白屏或容器重启。
 
 ---
 
@@ -407,6 +407,8 @@ frontend/src/
 ```
 
 当前产品不使用固定左侧导航栏。日常高频信息集中在单页数据中心，设置、诊断和其他低频功能通过顶部入口统一收纳到功能抽屉；不得因传统后台布局习惯恢复固定侧栏。
+
+媒体库一级列表采用顶层媒体视图，不平铺 Series 下的 Season / Episode；电视剧按 `Series → Season → Episode` 层级浏览，并按需读取直接子级。
 
 必须保留以下一级页面：
 

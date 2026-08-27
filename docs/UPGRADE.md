@@ -26,7 +26,7 @@ ghcr.io/eliyork/fntv-admin:vX.Y.Z
 
 升级不会修改飞牛影视数据库。`admin.db` 的迁移由后端启动流程处理，所有增强数据继续保存在 `/data/admin.db`。
 
-Phase 7C 增加可选快照读取、播放时段分布、最近活跃观看推断、收藏/下载只读能力、历史时间筛选和增强 CSV。快照默认关闭；开启后只写 `/data/cache/trimmedia.snapshot.db`，失败时回退源库只读直连。
+Phase 7C 增加快照读取、播放时段分布、最近活跃观看推断、收藏/下载只读能力、历史时间筛选和增强 CSV。新安装的快照读取默认开启并每 15 分钟按需刷新；快照只写 `/data/cache/trimmedia.snapshot.db`，失败时回退源库只读直连。升级时不会覆盖 `admin.db` 中已保存的快照选择。
 
 开发者本地构建测试才使用：
 

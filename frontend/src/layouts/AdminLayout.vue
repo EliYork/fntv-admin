@@ -3,11 +3,24 @@
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
     <header class="topbar">
-      <button class="brand-button" type="button" aria-label="返回数据中心首页" @click="goToDashboard">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <span class="brand-name">飞牛影视</span>
-        <span class="brand-suffix">数据中心</span>
-      </button>
+      <div class="topbar-navigation">
+        <button class="brand-button" type="button" aria-label="返回数据中心首页" @click="goToDashboard">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">飞牛影视</span>
+          <span class="brand-suffix">数据中心</span>
+        </button>
+        <button
+          class="features-button"
+          type="button"
+          aria-label="打开功能与设置"
+          aria-controls="features-drawer"
+          :aria-expanded="drawerVisible"
+          @click="drawerVisible = true"
+        >
+          <el-icon aria-hidden="true"><Menu /></el-icon>
+          <span class="features-label">功能</span>
+        </button>
+      </div>
 
       <div class="topbar-actions">
         <AppTooltip v-if="route.path === '/dashboard' && dashboardFreshness" :content="dashboardFreshness.partial ? '部分数据可能来自上次成功更新' : '当前页面展示数据最后一次成功更新的时间'" placement="bottom">
@@ -28,14 +41,6 @@
         <el-button class="toolbar-button refresh-button" text :icon="Refresh" :loading="refreshing" aria-label="刷新当前页面数据" @click="refreshCurrentPage">
           <span class="button-label">刷新</span>
         </el-button>
-        <el-button
-          class="toolbar-button"
-          text
-          :icon="Setting"
-          aria-label="打开功能与设置"
-          :aria-expanded="drawerVisible"
-          @click="drawerVisible = true"
-        />
         <el-button
           class="toolbar-button"
           text
@@ -65,7 +70,7 @@
       <div class="page-container"><router-view /></div>
     </main>
 
-    <el-drawer v-model="drawerVisible" class="settings-drawer" title="功能与设置" size="min(92vw, 390px)">
+    <el-drawer id="features-drawer" v-model="drawerVisible" class="settings-drawer" title="功能与设置" size="min(92vw, 390px)">
       <nav class="drawer-navigation" aria-label="后台功能导航">
         <section v-for="group in navigationGroups" :key="group.label" class="navigation-group">
           <h2>{{ group.label }}</h2>
@@ -100,6 +105,7 @@ import {
   Document,
   Film,
   HomeFilled,
+  Menu,
   Monitor,
   Moon,
   Refresh,
@@ -335,6 +341,13 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--app-surface) 94%, transparent);
 }
 
+.topbar-navigation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .brand-button {
   display: inline-flex;
   align-items: center;
@@ -358,6 +371,38 @@ onUnmounted(() => {
 
 .brand-name { font-size: 16px; font-weight: 720; letter-spacing: 0.02em; }
 .brand-suffix { margin-left: 9px; padding-left: 9px; border-left: 1px solid var(--app-border); color: var(--app-muted); font-size: 13px; }
+
+.features-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--app-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.features-button:hover,
+.features-button[aria-expanded='true'] {
+  border-color: var(--app-border-soft);
+  background: var(--app-surface-soft);
+  color: var(--app-accent);
+}
+
+.brand-button:focus-visible,
+.features-button:focus-visible,
+.navigation-item:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
 
 .topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; }
 .data-freshness { margin-right: 10px; color: var(--app-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -440,6 +485,7 @@ onUnmounted(() => {
 @media (max-width: 760px) {
   .admin-shell { grid-template-rows: 58px minmax(0, 1fr); height: 100dvh; min-height: 100vh; }
   .topbar { gap: 10px; padding: 0 10px 0 14px; }
+  .topbar-navigation { gap: 4px; }
   .brand-mark { height: 24px; margin-right: 9px; }
   .brand-suffix, .status-full, .button-label, .username, .user-menu-button > :deep(.el-icon), .freshness-full { display: none; }
   .freshness-compact { display: inline; }
@@ -455,6 +501,8 @@ onUnmounted(() => {
 
 @media (max-width: 430px) {
   .brand-name { font-size: 14px; }
+  .features-button { width: 44px; padding: 0; }
+  .features-label { display: none; }
   .freshness-compact { display: none; }
   .freshness-tiny { display: inline; }
   .data-freshness { position: absolute; bottom: 3px; left: 38px; margin-right: 0; line-height: 1; }

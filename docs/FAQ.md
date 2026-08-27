@@ -18,7 +18,7 @@
 
 ## 快照读取是默认开启吗？
 
-不是。`SNAPSHOT_ENABLED=false` 是默认值，系统设置中也可以关闭。开启后应用尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`；成功时业务查询优先读取快照，失败时自动回退源库只读直连。快照失败不会让页面白屏。
+是。全新安装默认开启快照读取，并每 15 分钟按需检查刷新。应用使用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`；成功时业务查询优先读取快照，失败时自动回退源库只读直连。快照失败不会让页面白屏。升级不会覆盖 `admin.db` 中已保存的关闭状态或自定义刷新间隔。
 
 ## 最近活跃观看是真正实时吗？
 

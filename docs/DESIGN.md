@@ -312,7 +312,7 @@ cache_entries
 报表 API
 ```
 
-Phase 7A/7B 先不启用报表缓存和任务化预计算。当前数据中心通过 report service 和 SQLite 只读连接做 SQL 聚合；独立报表页面已移除，但 report API 继续作为数据中心底层能力。Phase 7C 增加可选 SQLite 快照读取，快照只写 `/data/cache/trimmedia.snapshot.db`，失败时自动回退源库只读直连。前端刷新使用 stale-while-revalidate 展示策略，只保留浏览器内上次成功结果，不把报表缓存写入 `admin.db`。后续进入任务中心与缓存阶段时，再把可缓存报表写入 `admin.db` 或 `/data/cache`。
+Phase 7A/7B 先不启用报表缓存和任务化预计算。当前数据中心通过 report service 和 SQLite 只读连接做 SQL 聚合；独立报表页面已移除，但 report API 继续作为数据中心底层能力。Phase 7C 增加 SQLite 快照读取，全新安装默认开启并每 15 分钟按需刷新；快照只写 `/data/cache/trimmedia.snapshot.db`，失败时自动回退源库只读直连，用户已保存的设置优先。前端刷新使用 stale-while-revalidate 展示策略，只保留浏览器内上次成功结果，不把报表缓存写入 `admin.db`。后续进入任务中心与缓存阶段时，再把可缓存报表写入 `admin.db` 或 `/data/cache`。
 
 ---
 

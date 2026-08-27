@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -291,13 +292,13 @@ def _copy_fntv_snapshot_locked() -> dict[str, Any]:
         handle, tmp_name = tempfile.mkstemp(prefix="trimmedia.snapshot.", suffix=".tmp.db", dir=settings.cache_dir)
         os.close(handle)
         tmp = Path(tmp_name)
-        with open_fntv_source_connection() as source_conn:
-            with sqlite3.connect(tmp) as target_conn:
+        with closing(open_fntv_source_connection()) as source_conn:
+            with closing(sqlite3.connect(tmp)) as target_conn:
                 source_conn.backup(target_conn)
                 check = target_conn.execute("PRAGMA quick_check").fetchone()
                 if not check or str(check[0]).lower() != "ok":
                     raise sqlite3.DatabaseError("snapshot quick_check failed")
-        os.replace(tmp, snap)
+        _replace_snapshot(tmp, snap)
         refreshed_at = int(time.time())
         _write_meta({"snapshot_last_refresh_at": refreshed_at, "snapshot_last_attempt_at": attempt_at})
         _last_status = {"snapshot_ok": True, "snapshot_error": None, "snapshot_error_type": None, "snapshot_error_message": None}
@@ -333,6 +334,18 @@ def _snapshot_disabled_result() -> dict[str, Any]:
     global _last_status
     _last_status = {"snapshot_ok": None, "snapshot_error": None, "snapshot_error_type": None, "snapshot_error_message": None}
     return {"ok": False, "disabled": True, "message": "快照未启用，继续使用源库只读直连"}
+
+
+def _replace_snapshot(tmp: Path, snap: Path) -> None:
+    """原子替换快照；Windows 上为 SQLite 句柄释放的短暂共享冲突留出重试窗口。"""
+    for attempt in range(5):
+        try:
+            os.replace(tmp, snap)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def _snapshot_busy_result() -> dict[str, Any]:

@@ -57,7 +57,8 @@ services:
       LOG_RETENTION_DAYS: "14"
       TRUST_PROXY_HEADERS: "false"
       TRUSTED_PROXIES: ""
-      SNAPSHOT_ENABLED: "false"
+      SNAPSHOT_ENABLED: "true"
+      SNAPSHOT_REFRESH_INTERVAL_SECONDS: "900"
       ACTIVE_WATCH_WINDOW_SECONDS: "300"
 ```
 
@@ -174,9 +175,9 @@ ghcr.io/eliyork/fntv-admin:vX.Y.Z
 
 默认直接只读读取 `/fntv/trimmedia.db`。后端使用 SQLite URI `mode=ro` 打开源库，并设置 `PRAGMA query_only = ON`。即使飞牛 Docker UI 中显示数据库目录不是只读挂载，代码层仍会拒绝写入飞牛数据库。
 
-Phase 7C 增加可选快照读取。默认 `SNAPSHOT_ENABLED=false`，系统仍走源库只读直连。开启后，后端会尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`，业务查询优先读取快照；如果快照生成或打开失败，会自动回退源库只读直连，系统诊断页显示失败原因和 `fallback_to_source`。
+Phase 7C 增加快照读取。全新安装默认 `SNAPSHOT_ENABLED=true`，后端会尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`，业务查询优先读取快照；如果快照生成或打开失败，会自动回退源库只读直连，系统诊断页显示失败原因和 `fallback_to_source`。`admin.db` 中已保存的开关与刷新间隔始终优先，不会在升级时被默认值覆盖。
 
-快照采用 TTL 懒刷新，不是独立定时任务：打开页面或停留在页面时自动检查，距上次成功刷新超过间隔才重建快照（默认 1 小时，`SNAPSHOT_REFRESH_INTERVAL_SECONDS` 或系统设置中可改为 15 分钟 / 30 分钟 / 6 小时 / 24 小时，设为 `0` 则关闭自动刷新、仅手动刷新）。自动与手动刷新共用同一并发门控；刷新期间读取不会等待，可继续使用旧快照或源库只读直连。刷新失败会按最近一次尝试时间抑制重复重试，并自动回退源库直读。
+快照采用 TTL 懒刷新，不是独立定时任务：打开页面或停留在页面时自动检查，距上次成功刷新超过间隔才重建快照（默认 15 分钟，`SNAPSHOT_REFRESH_INTERVAL_SECONDS=900`；系统设置中可改为 30 分钟 / 1 小时 / 6 小时 / 24 小时，设为 `0` 则关闭自动刷新、仅手动刷新）。自动与手动刷新共用同一并发门控；刷新期间读取不会等待，可继续使用旧快照或源库只读直连。刷新失败会按最近一次尝试时间抑制重复重试，并自动回退源库直读。
 
 快照只写入 `/data/cache`，不复制 `.wal/.shm` 作为主要方案，不写飞牛影视数据库，不改变 `/fntv` 挂载语义。
 
@@ -216,7 +217,7 @@ docker compose -f docker-compose.build.yml up -d
 
 飞牛数据库表结构不确定时，页面会显示空状态或数据库异常提示，不会导致应用崩溃。
 
-数据中心通过后端 report API 和 SQL 聚合只读统计当前 active 数据库；默认仍使用源库只读直连。可选快照仅作为增强读取模式，默认关闭，失败会自动回退源库。增强配置、账号和后续缓存类数据只允许写入 `/data/admin.db`。
+数据中心通过后端 report API 和 SQL 聚合只读统计当前 active 数据库；默认优先使用按需刷新的快照，失败会自动回退源库只读直连。增强配置、账号和后续缓存类数据只允许写入 `/data/admin.db`。
 
 ## 特别感谢 / 参考项目
 

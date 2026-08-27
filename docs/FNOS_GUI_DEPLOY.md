@@ -64,7 +64,8 @@ DEFAULT_PAGE_SIZE=20
 LOG_RETENTION_DAYS=14
 TRUST_PROXY_HEADERS=false
 TRUSTED_PROXIES=
-SNAPSHOT_ENABLED=false
+SNAPSHOT_ENABLED=true
+SNAPSHOT_REFRESH_INTERVAL_SECONDS=900
 ACTIVE_WATCH_WINDOW_SECONDS=300
 ```
 
@@ -152,7 +153,7 @@ DOCKERHUB_TOKEN
 
 fntv-admin 默认直接只读读取 `/fntv/trimmedia.db`。后端使用 SQLite `mode=ro` 和 `PRAGMA query_only = ON` 保护源库，不写入源库、不 checkpoint 源库、不删除或修改源库 wal/shm 文件。部署后应确认 `python scripts/verify_fntv_readonly.py` 通过。
 
-可选快照读取默认关闭。开启后快照只写 `/data/cache/trimmedia.snapshot.db`，失败时自动回退源库只读直连；不要为了快照改变 `/data` 和 `/fntv` 的挂载语义。
+快照读取默认开启，默认每 15 分钟按需检查刷新。快照只写 `/data/cache/trimmedia.snapshot.db`，失败时自动回退源库只读直连；不要为了快照改变 `/data` 和 `/fntv` 的挂载语义。已保存到 `admin.db` 的用户选择始终优先。
 
 如果数据库状态异常，优先检查：
 

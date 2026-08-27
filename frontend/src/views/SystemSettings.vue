@@ -58,7 +58,7 @@
       <div class="panel-title">数据读取</div>
       <div class="settings-stack">
         <el-alert
-          title="快照读取是可选增强。快照只写入 /data/cache，失败时自动回退源库只读直连。"
+          title="快照读取默认开启，每 15 分钟按需检查刷新。快照只写入 /data/cache，失败时自动回退源库只读直连。"
           type="info"
           show-icon
           :closable="false"
@@ -102,8 +102,8 @@ const authPolicySaving = ref(false)
 const authPolicy = ref<AuthPolicy | null>(null)
 const localAuthRequired = ref(true)
 const remoteAccessPolicy = ref<RemoteAccessPolicy>('login')
-const snapshotEnabled = ref(false)
-const snapshotRefreshInterval = ref(3600)
+const snapshotEnabled = ref(true)
+const snapshotRefreshInterval = ref(900)
 const snapshotSaving = ref(false)
 const refreshIntervalOptions = [
   { value: 900, label: '15 分钟' },
@@ -152,9 +152,9 @@ async function refreshSettings() {
 
 async function loadAppSettings() {
   const appSettings = await fetchAppSettings()
-  snapshotEnabled.value = String(appSettings.snapshot_enabled || 'false').toLowerCase() === 'true'
+  snapshotEnabled.value = String(appSettings.snapshot_enabled ?? 'true').toLowerCase() === 'true'
   const rawInterval = Number(appSettings.snapshot_refresh_interval_seconds)
-  snapshotRefreshInterval.value = Number.isFinite(rawInterval) ? rawInterval : 3600
+  snapshotRefreshInterval.value = Number.isFinite(rawInterval) ? rawInterval : 900
 }
 
 async function loadAuthPolicy() {

@@ -21,6 +21,7 @@ from app.db.fntv_snapshot import (
     snapshot_status,
 )
 from app.db.migrations import run_migrations
+from app.db.admin_db import SessionLocal
 from app.db.schema_check import schema_diagnostics
 from app.models import Setting
 from app.services import fntv_schema_adapter
@@ -35,6 +36,8 @@ def startup_check() -> None:
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     run_migrations()
+    with SessionLocal() as db:
+        default_settings(db)
     ensure_signing_key()
     if settings.fntv_db_path.exists():
         logger.info("fntv source database configured for readonly direct access")
@@ -69,7 +72,7 @@ def database_status(detail: bool = False) -> dict[str, Any]:
         "source_readable": snap_info["source_readable"],
         "source_readonly_configured": snap_info["source_readonly_configured"],
         "snapshot_enabled": snap_info["snapshot_enabled"],
-        "snapshot_refresh_interval_seconds": snap_info.get("snapshot_refresh_interval_seconds", 3600),
+        "snapshot_refresh_interval_seconds": snap_info.get("snapshot_refresh_interval_seconds", 900),
         "snapshot_stale": snap_info.get("snapshot_stale"),
         "snapshot_refreshing": snap_info.get("snapshot_refreshing", False),
         "snapshot_retry_suppressed": snap_info.get("snapshot_retry_suppressed", False),
@@ -219,23 +222,23 @@ def health() -> dict[str, Any]:
 def default_settings(db: Session) -> dict[str, Any]:
     rows = db.scalars(select(Setting)).all()
     result = {row.key: row.value for row in rows}
-    if not result:
+    defaults = {
+        "default_page_size": str(settings.default_page_size),
+        "log_retention_days": str(settings.log_retention_days),
+        "theme": "system",
+        "local_auth_required": "true",
+        "remote_access_policy": "login",
+        "snapshot_enabled": "true" if settings.snapshot_enabled else "false",
+        "snapshot_refresh_interval_seconds": str(settings.snapshot_refresh_interval_seconds),
+    }
+    missing = {key: value for key, value in defaults.items() if key not in result}
+    if missing:
         now = now_ts()
-        defaults = {
-            "default_page_size": str(settings.default_page_size),
-            "log_retention_days": str(settings.log_retention_days),
-            "theme": "system",
-            "local_auth_required": "true",
-            "remote_access_policy": "login",
-            "snapshot_enabled": "true" if snapshot_enabled() else "false",
-            "snapshot_refresh_interval_seconds": str(settings.snapshot_refresh_interval_seconds),
-        }
-        for key, value in defaults.items():
-            db.merge(Setting(key=key, value=value, value_type="string", updated_at=now))
+        for key, value in missing.items():
+            value_type = "bool" if key == "snapshot_enabled" else "string"
+            db.add(Setting(key=key, value=value, value_type=value_type, updated_at=now))
         db.commit()
-        return defaults
-    # 老库可能没有该键，返回生效值，保证前端能拿到当前间隔
-    result.setdefault("snapshot_refresh_interval_seconds", str(snapshot_refresh_interval_seconds()))
+        result.update(missing)
     return result
 
 

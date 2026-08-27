@@ -43,7 +43,8 @@ services:
       BACKUP_DIR: /data/backup
       DEFAULT_PAGE_SIZE: "20"
       LOG_RETENTION_DAYS: "14"
-      SNAPSHOT_ENABLED: "false"
+      SNAPSHOT_ENABLED: "true"
+      SNAPSHOT_REFRESH_INTERVAL_SECONDS: "900"
       ACTIVE_WATCH_WINDOW_SECONDS: "300"
 ```
 
@@ -89,9 +90,9 @@ unable to open database file
 
 不要把默认挂载改回 `:/fntv:ro`。项目的只读保护在应用代码层完成，而不是依赖 Docker 层 `:ro`。
 
-## 源库只读直连与可选快照
+## 源库只读与快照读取
 
-默认直接只读读取 `/fntv/trimmedia.db`，`SNAPSHOT_ENABLED=false`。
+源库始终通过只读连接读取 `/fntv/trimmedia.db`；全新安装默认 `SNAPSHOT_ENABLED=true`，刷新间隔为 `900` 秒（15 分钟）。
 
 后端使用 SQLite URI `mode=ro` 打开飞牛数据库，并设置 `PRAGMA query_only = ON`。不执行 checkpoint、vacuum，不删除或修改飞牛源库的 wal/shm 文件。
 
@@ -99,7 +100,7 @@ unable to open database file
 
 如果飞牛 UI 中显示数据库目录不是只读挂载，项目代码层仍使用只读连接保护源库。`python scripts/verify_fntv_readonly.py` 必须通过。
 
-可选快照读取可以通过环境变量或系统设置开启。开启后，应用会尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`。快照成功时业务查询优先读取快照；快照失败时自动回退源库只读直连，页面不应白屏。快照只写 `/data/cache`，不写飞牛源库，不复制 `.wal/.shm` 作为主要方案。
+快照读取默认开启，也可以通过环境变量或系统设置关闭。应用会尝试用 SQLite backup API 生成 `/data/cache/trimmedia.snapshot.db`。快照成功时业务查询优先读取快照；快照失败时自动回退源库只读直连，页面不应白屏。快照只写 `/data/cache`，不写飞牛源库，不复制 `.wal/.shm` 作为主要方案。升级时 `admin.db` 已保存的用户设置优先于项目默认。
 
 ## 访问控制
 
