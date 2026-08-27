@@ -1,0 +1,182 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version in vMAJOR.MINOR.PATCH format (for example v0.8.1)
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Reject workflow dispatch outside main
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "Official releases must be dispatched with the main branch selected." >&2
+          exit 1
+
+      - name: Check out complete repository history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate version and release source
+        id: release
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$DISPATCH_VERSION"
+          else
+            version="$REF_NAME"
+          fi
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must match stable SemVer vMAJOR.MINOR.PATCH." >&2
+            exit 1
+          fi
+
+          git fetch --force origin main:refs/remotes/origin/main
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            release_sha="$(git rev-parse HEAD)"
+            main_sha="$(git rev-parse origin/main)"
+            if [[ "$release_sha" != "$main_sha" ]]; then
+              echo "Checked-out release commit is not the current origin/main HEAD." >&2
+              exit 1
+            fi
+          else
+            release_sha="$(git rev-list -n 1 "$version")"
+            if ! git merge-base --is-ancestor "$release_sha" origin/main; then
+              echo "Version tag must point to a commit contained in main history." >&2
+              exit 1
+            fi
+          fi
+
+          remote_tag_sha="$(git ls-remote --tags origin "refs/tags/$version^{}" | awk '{print $1}')"
+          if [[ -z "$remote_tag_sha" ]]; then
+            remote_tag_sha="$(git ls-remote --tags origin "refs/tags/$version" | awk '{print $1}')"
+          fi
+          if [[ -n "$remote_tag_sha" && "$remote_tag_sha" != "$release_sha" ]]; then
+            echo "Tag $version already exists at another commit and is immutable." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Create immutable annotated tag for dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_tag_sha="$(git ls-remote --tags origin "refs/tags/$VERSION^{}" | awk '{print $1}')"
+          if [[ -z "$remote_tag_sha" ]]; then
+            remote_tag_sha="$(git ls-remote --tags origin "refs/tags/$VERSION" | awk '{print $1}')"
+          fi
+          if [[ -z "$remote_tag_sha" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$VERSION" "$RELEASE_SHA" -m "fntv-admin $VERSION"
+            git push origin "refs/tags/$VERSION"
+          elif [[ "$remote_tag_sha" != "$RELEASE_SHA" ]]; then
+            echo "Tag $VERSION already exists at another commit and is immutable." >&2
+            exit 1
+          fi
+
+      - name: Require Docker Hub release credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$DOCKERHUB_USERNAME" || -z "$DOCKERHUB_TOKEN" ]]; then
+            echo "DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are required for a formal release." >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push version images
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: |
+            docker.io/eliyork/fntv-admin:${{ steps.release.outputs.version }}
+            ghcr.io/eliyork/fntv-admin:${{ steps.release.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.release.outputs.release_sha }}
+
+      - name: Generate and validate release assets
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="release-assets/fntv-admin-$VERSION.yml"
+          python scripts/generate_release_compose.py \
+            --source docker-compose.yml \
+            --output "$asset" \
+            --version "$VERSION"
+          docker compose -f "$asset" config --quiet
+          (
+            cd release-assets
+            sha256sum "fntv-admin-$VERSION.yml" > SHA256SUMS.txt
+            sha256sum --check SHA256SUMS.txt
+          )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$VERSION" >/dev/null 2>&1 && {
+            echo "GitHub Release $VERSION already exists; refusing to overwrite it." >&2
+            exit 1
+          }
+          gh release create "$VERSION" \
+            "release-assets/fntv-admin-$VERSION.yml" \
+            release-assets/SHA256SUMS.txt \
+            --title "fntv-admin $VERSION" \
+            --generate-notes \
+            --verify-tag

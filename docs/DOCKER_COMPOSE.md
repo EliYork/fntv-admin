@@ -13,7 +13,7 @@ docker compose up -d
 访问：
 
 ```text
-http://localhost:8080
+http://localhost:18080
 ```
 
 推荐 Compose 示例：
@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "8080:8080"
+      - "${FNTV_ADMIN_PORT:-18080}:8080"
 
     volumes:
       - ./data:/data
@@ -49,6 +49,8 @@ services:
 ```
 
 `APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串。
+
+默认宿主机端口为 `18080`，容器内部端口保持 `8080`。如需自定义，在 `.env` 中设置 `FNTV_ADMIN_PORT` 后重新运行 `docker compose up -d`。
 
 `TZ` 使用 IANA 时区名，默认 `Asia/Shanghai`。容器镜像包含时区数据，后端会显式使用该配置计算观看历史、今日播放、日期趋势和播放时段；这些结果不依赖 Docker 宿主机或浏览器的本地时区。不要使用固定 `+8` 替代 `TZ`。
 
@@ -126,14 +128,14 @@ TRUST_PROXY_HEADERS=true
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.8.0
+docker.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 备用 GHCR 镜像地址：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.8.0
+ghcr.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 默认 Compose 的挂载规则：

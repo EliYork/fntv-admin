@@ -433,7 +433,7 @@ services:
     container_name: fntv-admin
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${FNTV_ADMIN_PORT:-18080}:8080"
     volumes:
       - ./data:/data
       - /usr/local/apps/@appdata/trim.media/database:/fntv
@@ -1326,7 +1326,7 @@ Docker 任务：
 验收标准：
 
 1. `docker compose up -d` 可启动。
-2. 访问 `http://宿主机:8080` 能打开前端。
+2. 默认访问 `http://宿主机:18080` 能打开前端，容器内部仍监听 `8080`。
 3. 前端能调用后端健康检查。
 4. 数据库状态能正确显示。
 5. `admin.db` 自动初始化。

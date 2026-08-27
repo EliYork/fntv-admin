@@ -28,8 +28,10 @@ image: ghcr.io/eliyork/fntv-admin:latest
 端口：
 
 ```text
-宿主机 8080 -> 容器 8080
+宿主机默认 18080 -> 容器 8080
 ```
+
+Compose 导入时可通过 `FNTV_ADMIN_PORT` 自定义宿主机端口；不要修改容器内部的 `8080`。
 
 挂载：
 
@@ -71,7 +73,7 @@ ACTIVE_WATCH_WINDOW_SECONDS=300
 启动后访问：
 
 ```text
-http://飞牛IP:8080
+http://飞牛IP:18080
 ```
 
 首次进入需要初始化管理员账号。
@@ -108,7 +110,7 @@ ghcr.io/eliyork/fntv-admin:latest
 然后创建容器：
 
 - 容器端口：`8080`
-- 宿主机端口：`8080`
+- 宿主机端口：`18080`（可按需自定义）
 - 挂载 `/vol1/Docker/fntv-admin/data` 到 `/data`，读写
 - 挂载 `/usr/local/apps/@appdata/trim.media/database` 到 `/fntv`
 - 设置上方环境变量

@@ -12,15 +12,17 @@ docker compose up -d
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.8.0
+docker.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 备用 GHCR 镜像：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.8.0
+ghcr.io/eliyork/fntv-admin:vX.Y.Z
 ```
+
+仓库中的 `docker-compose.yml` 始终跟随 `latest`。需要锁定正式版本时，从对应 GitHub Release 下载 `fntv-admin-vX.Y.Z.yml` 并核对同一 Release 中的 `SHA256SUMS.txt`。
 
 升级不会修改飞牛影视数据库。`admin.db` 的迁移由后端启动流程处理，所有增强数据继续保存在 `/data/admin.db`。
 

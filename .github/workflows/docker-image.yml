@@ -5,8 +5,6 @@ on:
     branches:
       - main
       - develop
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
 
 concurrency:
@@ -57,7 +55,6 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
-            type=ref,event=tag
 
       - name: Extract Docker Hub metadata
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
@@ -68,7 +65,6 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
-            type=ref,event=tag
 
       - name: Build and push GHCR Docker image
         uses: docker/build-push-action@v6

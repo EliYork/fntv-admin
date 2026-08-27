@@ -69,14 +69,14 @@ frontend/
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.8.0
+docker.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 GHCR 作为备用镜像源：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.8.0
+ghcr.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 不要把默认镜像源改回 GHCR，不要移除 GHCR 备用发布。
@@ -474,14 +474,14 @@ volumes:
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.8.0
+docker.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 备用 GHCR 镜像：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.8.0
+ghcr.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 Docker Hub 发布需要 GitHub Secrets `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`，其中 token 必须使用 Docker Hub access token，不要使用明文密码。
@@ -1137,3 +1137,105 @@ Phase 1：
 如果为了快速完成某个功能而违反以上规则，应拒绝该实现并重新设计。
 
 以上标准属于项目级技术与架构判断；具体功能、视觉、交互和真实数据表现是否达到最终预期，由用户亲自验收。AI Agent 不得以自身开发侧验证代替用户最终验收。
+
+---
+
+## 18. Git 分支、开发与发布纪律
+
+### 18.1 正式分支模型
+
+项目采用：
+
+```text
+develop -> main -> version tag
+```
+
+`develop` 用于所有日常开发、Agent 修改、Bug 修复、新功能、UI 调整、文档开发和开发侧测试。普通开发默认只能在 `develop` 进行；push 后自动构建 Docker Hub 与 GHCR 的 `:dev` 镜像。
+
+`main` 只接收已经由用户本人在真实 NAS 环境验收、并明确确认准备正式发布的代码；push 后自动构建 Docker Hub 与 GHCR 的 `:latest` 镜像。普通开发 Agent 不得直接在 `main` 开发、push `main`，也不得自行决定将 `develop` 合并到 `main`。
+
+正式 version tag 只用于稳定版本，格式为 `vMAJOR.MINOR.PATCH`，且必须指向正式 `main` 历史中的 commit。已经发布的 tag 不得删除、移动、force 更新或改指其他 commit；修复必须发布新版本。
+
+### 18.2 开发开始前 Git 检查
+
+每次开始正式修改前至少确认：
+
+```text
+当前 branch
+git status
+当前 HEAD
+是否存在用户未提交修改
+本地 develop 与 origin/develop 是否存在明显分叉
+```
+
+日常开发任务如果当前不在 `develop`，应先判断切换是否安全。不得为了切换分支或方便开发执行 `git reset --hard`、`git clean`、覆盖用户修改、丢弃用户文件或强制恢复整个工作区。用户修改与任务文件重叠时必须谨慎合并，并在交付报告中说明。
+
+### 18.3 开发完成后 commit 与 push
+
+除非用户明确要求“不要 commit”“不要 push”“只审计”“只查看”或“只给建议”，一个可交付开发任务默认包含：
+
+1. 完成与影响范围相符的开发侧技术检查。
+2. 检查 diff 与最终 Git 状态。
+3. 确认没有误提交数据库、日志、Secrets、`.env`、构建产物或其他运行时文件。
+4. 在 `develop` 创建清晰 commit。
+5. 立即 push 到 `origin/develop`。
+
+不要把已经完成的任务长期留在未提交状态，也不要把本地 commit 表述成“已推送”。
+
+### 18.4 Commit 规范
+
+Commit message 使用清晰、简短的 Conventional Commit 风格，例如：
+
+```text
+feat: add automated release workflow
+fix: make host port configurable
+docs: document develop release workflow
+chore: harden release automation
+```
+
+禁止使用 `update`、`changes`、`fix stuff`、`123` 等无意义 message。一个任务通常使用一个完整 commit；仅在成果天然独立时合理拆分，不为制造形式上的历史而拆成大量微型 commit。
+
+### 18.5 Push 冲突处理
+
+普通开发 push 目标为 `origin/develop`。禁止 force push，包括 `git push --force` 和 `git push --force-with-lease`，除非用户在本次任务中明确授权。
+
+如果 push 因远端 `develop` 有新提交而被拒绝，应先确认工作区和本地 commit 安全，再执行：
+
+```bash
+git pull --rebase origin develop
+```
+
+如果 rebase 出现冲突，停止自动推进，保留现场并报告。不得擅自选择冲突一方、覆盖远端代码、重写他人历史或用 force push 绕过冲突。
+
+### 18.6 正式发布边界
+
+普通开发 Agent 不负责 merge `main`、创建正式 tag 或 GitHub Release，除非用户在当前任务中明确要求执行正式发布。正式发布顺序为：
+
+```text
+develop 完成开发
+-> 用户在 NAS 使用 :dev 实机验收
+-> 用户确认 develop 合并到 main
+-> main 自动构建 :latest
+-> 从 main 运行 Release workflow 并输入 vMAJOR.MINOR.PATCH
+-> 自动创建不可变 tag
+-> 自动构建 Docker Hub / GHCR version 镜像
+-> 自动创建 GitHub Release 与校验文件
+```
+
+用户本人也可以 push 合法且属于 `main` 历史的 version tag 来触发相同正式 Release 流程。普通开发任务不得创建 version tag、发布 GitHub Release、移动旧 tag 或覆盖旧 Release。
+
+### 18.7 交付报告 Git 信息
+
+完成开发后的交付报告必须说明：
+
+```text
+当前 branch
+最终 commit SHA
+commit message
+是否成功 push
+push 目标分支
+关键技术检查结果
+待用户实机验收项
+```
+
+如果 push 未成功，必须明确说明原因和当前本地状态。

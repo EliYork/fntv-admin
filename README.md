@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "8080:8080"
+      - "${FNTV_ADMIN_PORT:-18080}:8080"
 
     volumes:
       # 后台数据目录，需读写
@@ -79,14 +79,16 @@ docker compose up -d
 5. 打开：
 
 ```text
-http://localhost:8080
+http://localhost:18080
 ```
 
 在飞牛 NAS 上访问时，把 `localhost` 换成飞牛 IP：
 
 ```text
-http://飞牛IP:8080
+http://飞牛IP:18080
 ```
+
+默认宿主机端口为 `18080`，容器内部仍监听 `8080`。如需避开其他服务，可在 `.env` 中设置 `FNTV_ADMIN_PORT`（例如测试实例使用 `18081`），无需修改容器端口。
 
 首次进入时创建管理员账号。管理员密码只会以 hash 形式写入 `/data/admin.db`。
 
@@ -114,21 +116,21 @@ TRUST_PROXY_HEADERS=false
 
 ```text
 docker.io/eliyork/fntv-admin:latest
-docker.io/eliyork/fntv-admin:v0.8.0
+docker.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
 备用 GHCR 镜像：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:v0.8.0
+ghcr.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
-GitHub Actions 会在以下场景构建并推送镜像：
+GitHub Actions 的镜像职责：
 
-- push 到 `main` 分支。
-- push `v*.*.*` 版本 tag。
-- 手动触发 `workflow_dispatch`。
+- push 到 `develop`：构建 Docker Hub / GHCR 的 `dev` 镜像。
+- push 到 `main`：构建 Docker Hub / GHCR 的 `latest` 镜像。
+- 正式 Release workflow：校验 `main` 来源后构建 Docker Hub / GHCR 的 `vX.Y.Z` 镜像，并创建 GitHub Release。
 
 如果 fork 后要发布自己的镜像，可以把示例中的 `eliyork` 改成自己的账号；官方默认示例保持 `eliyork`。
 
@@ -136,11 +138,11 @@ GHCR 镜像名格式：
 
 ```text
 ghcr.io/eliyork/fntv-admin:latest
-ghcr.io/eliyork/fntv-admin:sha-<git-sha>
-ghcr.io/eliyork/fntv-admin:<tag>
+ghcr.io/eliyork/fntv-admin:dev
+ghcr.io/eliyork/fntv-admin:vX.Y.Z
 ```
 
-如果仓库默认分支不是 `main`，需要在 `.github/workflows/docker-image.yml` 中把触发分支改成实际默认分支。
+正式发布前，先由用户在 NAS 上验收 `dev`，再将 `develop` 合并到 `main`。随后在 GitHub Actions 中选择 `main` 运行 Release workflow，输入严格格式的版本号（例如 `v0.8.1`）。流水线会创建不可变 tag、推送两个镜像源的版本镜像、生成版本锁定 Compose 与 `SHA256SUMS.txt`，最后创建 GitHub Release。用户本人直接向 GitHub push 一个合法且属于 `main` 历史的 `vX.Y.Z` tag 时，也会执行相同流程。
 
 ## 数据持久化
 
