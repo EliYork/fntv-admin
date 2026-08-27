@@ -509,30 +509,9 @@ def _overview_play_stats(conn: sqlite3.Connection, schema: adapter.FntvSchemaInf
 
 
 def _play_scope(schema: adapter.FntvSchemaInfo, *, include_user: bool, include_item: bool) -> tuple[str, list[str]]:
-    table = schema.plays.table
-    if not table:
+    if not schema.plays.table:
         return "", ["1 = 0"]
-    joins: list[str] = []
-    where: list[str] = []
-    play_visible = schema.plays.fields.get("visible")
-    if play_visible:
-        where.append(f"p.{quote_identifier(play_visible)} = 1")
-    user_visible = _visible_column(schema, schema.users.table)
-    play_user_col = schema.plays.fields.get("user_guid")
-    user_guid_col = schema.users.fields.get("guid")
-    if include_user and schema.users.table and play_user_col and user_guid_col:
-        joins.append(f"JOIN {quote_identifier(schema.users.table)} u ON p.{quote_identifier(play_user_col)} = u.{quote_identifier(user_guid_col)}")
-        if user_visible:
-            where.append(f"u.{quote_identifier(user_visible)} = 1")
-    item_visible = _visible_column(schema, schema.items.table)
-    play_item_col = schema.plays.fields.get("item_guid")
-    item_guid_col = schema.items.fields.get("guid")
-    if include_item and schema.items.table and play_item_col and item_guid_col:
-        joins.append(f"JOIN {quote_identifier(schema.items.table)} i ON p.{quote_identifier(play_item_col)} = i.{quote_identifier(item_guid_col)}")
-        if item_visible:
-            where.append(f"i.{quote_identifier(item_visible)} = 1")
-    if not where:
-        where.append("1 = 1")
+    joins, where = adapter.valid_play_scope(schema, include_user=include_user, include_item=include_item)
     return "\n".join(joins), where
 
 

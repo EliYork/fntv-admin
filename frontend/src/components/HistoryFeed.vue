@@ -293,7 +293,7 @@ function setupObserver() {
 }
 
 function historyKey(item: HistoryItem): string {
-  return item.id || [item.user_guid, item.item_guid, item.played_at || item.started_at || '', item.position_seconds ?? ''].join(':')
+  return item.record_key || item.id || [item.user_guid, item.item_guid, item.played_at || item.started_at || '', item.position_seconds ?? ''].join(':')
 }
 
 function historyDateTime(item: HistoryItem): string {

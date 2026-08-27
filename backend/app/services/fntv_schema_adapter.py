@@ -789,6 +789,56 @@ def _visible_clause(schema: FntvSchemaInfo, alias: str | None = None) -> str | N
     return f"{_qualified_column(visible_col, alias)} = 1"
 
 
+def valid_play_scope(
+    schema: FntvSchemaInfo,
+    *,
+    include_user: bool = True,
+    include_item: bool = True,
+) -> tuple[list[str], list[str]]:
+    """Return the canonical scope for valid playback records.
+
+    A visible play remains countable only when its mapped user/media relation
+    exists and is visible. When a deployment does not expose a joinable
+    relation, the play table still remains readable on its own.
+    """
+    joins: list[str] = []
+    where: list[str] = []
+    play_visible = schema.plays.fields.get("visible")
+    if play_visible:
+        where.append(f"p.{quote_identifier(play_visible)} = 1")
+
+    play_user_col = schema.plays.fields.get("user_guid")
+    user_guid_col = schema.users.fields.get("guid")
+    if include_user and schema.users.table and play_user_col and user_guid_col:
+        joins.append(
+            f"JOIN {quote_identifier(schema.users.table)} u "
+            f"ON p.{quote_identifier(play_user_col)} = u.{quote_identifier(user_guid_col)}"
+        )
+        user_visible = _table_visible_column(schema, schema.users.table)
+        if user_visible:
+            where.append(f"u.{quote_identifier(user_visible)} = 1")
+
+    play_item_col = schema.plays.fields.get("item_guid")
+    item_guid_col = schema.items.fields.get("guid")
+    if include_item and schema.items.table and play_item_col and item_guid_col:
+        joins.append(
+            f"JOIN {quote_identifier(schema.items.table)} i "
+            f"ON p.{quote_identifier(play_item_col)} = i.{quote_identifier(item_guid_col)}"
+        )
+        item_visible = _table_visible_column(schema, schema.items.table)
+        if item_visible:
+            where.append(f"i.{quote_identifier(item_visible)} = 1")
+
+    if not where:
+        where.append("1 = 1")
+    return joins, where
+
+
+def _table_visible_column(schema: FntvSchemaInfo, table_name: str | None) -> str | None:
+    table = schema.tables.get(table_name or "")
+    return find_column(table, ("visible", "is_visible")) if table else None
+
+
 def _choose_table(tables: dict[str, TableInfo], preferred: tuple[str, ...], hints: tuple[str, ...]) -> str | None:
     by_lower = {name.lower(): name for name in tables}
     for name in preferred:
@@ -821,26 +871,30 @@ def _count_play_records(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int
     table = schema.plays.table
     if not table:
         return 0
-    where = _visible_clause(schema)
-    where_sql = f" WHERE {where}" if where else ""
-    row = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(table)}{where_sql}").fetchone()
+    joins, where = valid_play_scope(schema)
+    row = conn.execute(
+        f"SELECT COUNT(*) AS total FROM {quote_identifier(table)} p {' '.join(joins)} "
+        f"WHERE {' AND '.join(where)}"
+    ).fetchone()
     return int(row["total"]) if row else 0
 
 
 def _count_today_plays(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> int:
     table = schema.plays.table
-    time_expr = _play_time_expr(schema)
+    time_expr = _play_time_expr(schema, "p")
     if not table or not time_expr:
         return 0
     seconds_expr = _timestamp_seconds_expr(time_expr)
     # Use TZ when configured, otherwise Asia/Shanghai, so "today" matches common FNOS deployments.
     start, end = _local_day_bounds()
-    where = [f"{seconds_expr} >= ?", f"{seconds_expr} < ?"]
+    joins, where = valid_play_scope(schema)
+    where.extend((f"{seconds_expr} >= ?", f"{seconds_expr} < ?"))
     params: list[Any] = [start, end]
-    visible = _visible_clause(schema)
-    if visible:
-        where.append(visible)
-    row = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(table)} WHERE {' AND '.join(where)}", params).fetchone()
+    row = conn.execute(
+        f"SELECT COUNT(*) AS total FROM {quote_identifier(table)} p {' '.join(joins)} "
+        f"WHERE {' AND '.join(where)}",
+        params,
+    ).fetchone()
     return int(row["total"]) if row else 0
 
 
@@ -861,12 +915,15 @@ def _range_bounds(value: Any) -> tuple[int | None, int | None]:
 
 def _latest_play_time(conn: sqlite3.Connection, schema: FntvSchemaInfo) -> str | None:
     table = schema.plays.table
-    time_expr = _play_time_expr(schema)
+    time_expr = _play_time_expr(schema, "p")
     if not table or not time_expr:
         return None
-    where = _visible_clause(schema)
-    where_sql = f" WHERE {where}" if where else ""
-    row = conn.execute(f"SELECT {time_expr} AS played_at FROM {quote_identifier(table)}{where_sql} ORDER BY {time_expr} DESC LIMIT 1").fetchone()
+    joins, where = valid_play_scope(schema)
+    row = conn.execute(
+        f"SELECT {time_expr} AS played_at "
+        f"FROM {quote_identifier(table)} p {' '.join(joins)} "
+        f"WHERE {' AND '.join(where)} ORDER BY {time_expr} DESC LIMIT 1"
+    ).fetchone()
     return normalize_timestamp(row["played_at"]) if row else None
 
 
@@ -877,7 +934,7 @@ def _play_rows(conn: sqlite3.Connection, schema: FntvSchemaInfo, page: int, page
     _, clean_page_size, offset = normalize_page(page, page_size)
     where, params, joins = _play_where(schema, filters)
     order = _play_time_expr(schema, "p")
-    order_sql = f" ORDER BY {order} DESC" if order else " ORDER BY p.rowid DESC"
+    order_sql = f" ORDER BY {order} DESC, p.rowid DESC" if order else " ORDER BY p.rowid DESC"
     from_sql = f"FROM {quote_identifier(table)} p {joins}"
     where_sql = f" WHERE {' AND '.join(where)}" if where else ""
     count = conn.execute(f"SELECT COUNT(*) AS total {from_sql}{where_sql}", params).fetchone()
@@ -886,12 +943,11 @@ def _play_rows(conn: sqlite3.Connection, schema: FntvSchemaInfo, page: int, page
 
 
 def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[str], list[Any], str]:
-    where: list[str] = []
+    joins, where = valid_play_scope(schema)
     params: list[Any] = []
-    joins: list[str] = []
     fields = schema.plays.fields
-    joined_items = False
-    joined_users = False
+    joined_items = bool(schema.items.table and fields.get("item_guid") and schema.items.fields.get("guid"))
+    joined_users = bool(schema.users.table and fields.get("user_guid") and schema.users.fields.get("guid"))
     joined_item_parents = False
 
     def ensure_item_join() -> None:
@@ -920,9 +976,6 @@ def _play_where(schema: FntvSchemaInfo, filters: dict[str, Any]) -> tuple[list[s
         joins.append(f"LEFT JOIN {item_table} igp ON ip.{quote_identifier(parent_col)} = igp.{quote_identifier(guid_col)}")
         joined_item_parents = True
 
-    visible = _visible_clause(schema, "p")
-    if visible:
-        where.append(visible)
     if filters.get("user_guid") and fields.get("user_guid"):
         where.append(f"p.{quote_identifier(fields['user_guid'])} = ?")
         params.append(filters["user_guid"])
@@ -1088,6 +1141,7 @@ def _play_row(row: dict[str, Any], schema: FntvSchemaInfo, users: dict[str, dict
     progress = format_play_progress(position_value, runtime_value, watched, runtime_is_seconds=runtime_is_seconds)
     return {
         "id": str(_row_value(row, fields.get("id")) or row.get("__rowid") or ""),
+        "record_key": str(row.get("__rowid") or _row_value(row, fields.get("id")) or ""),
         "user_guid": user_guid,
         "username": username,
         "user": username,

@@ -10,7 +10,7 @@
     </section>
 
     <section class="data-section trend-section" aria-labelledby="trend-title">
-      <header class="section-heading">
+      <header class="section-heading trend-heading">
         <h2 id="trend-title">播放趋势</h2>
         <span class="section-period">最近 1 年</span>
       </header>
@@ -309,13 +309,16 @@ useRouteRefresh(refreshPage)
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 32px; }
 .section-heading h2 { margin: 0; color: var(--app-title); font-size: clamp(17px, 1.5vw, 20px); font-weight: 660; letter-spacing: -0.015em; }
 .section-period { color: var(--app-muted); font-size: 12px; }
+.trend-heading { justify-content: flex-start; }
+.trend-heading .section-period { line-height: 1; }
 .period-select { width: 88px; }
 .trend-section { padding-top: 2px; }
 
 .hourly-scroll { overflow-x: auto; overflow-y: hidden; padding: 3px 0 2px; }
-.hourly-chart { display: grid; grid-template-columns: repeat(24, minmax(18px, 1fr)); gap: clamp(4px, 0.7vw, 11px); min-width: 620px; height: 132px; padding-top: 8px; }
+.hourly-chart { position: relative; display: grid; grid-template-columns: repeat(24, minmax(18px, 1fr)); gap: clamp(4px, 0.7vw, 11px); min-width: 620px; height: 132px; padding-top: 8px; }
+.hourly-chart::after { position: absolute; z-index: 0; top: 111px; right: 0; left: 0; height: 1px; background: color-mix(in srgb, var(--app-border) 58%, transparent); content: ''; pointer-events: none; }
 .hour-column { display: grid; grid-template-rows: 104px 20px; gap: 7px; min-width: 0; cursor: default; }
-.hour-bar-zone { display: flex; align-items: flex-end; justify-content: center; height: 104px; border-bottom: 1px solid var(--app-border); }
+.hour-bar-zone { position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center; height: 104px; }
 .hour-bar { width: min(70%, 18px); min-height: 2px; border-radius: 3px 3px 1px 1px; background: var(--app-accent); opacity: 0.82; transition: opacity 160ms ease; }
 .hour-column:hover .hour-bar { opacity: 1; }
 .hour-tick { color: var(--app-muted); font-size: 10px; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }

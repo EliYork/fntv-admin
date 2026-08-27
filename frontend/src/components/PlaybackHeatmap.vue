@@ -78,6 +78,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import EmptyState from './EmptyState.vue'
 import type { PlayTrendItem, WeeklyHourlyDistributionItem } from '../api/modules'
+import { buildDateMonthLabels } from '../utils/heatmapCalendar'
 
 type HeatmapMode = 'date' | 'weekhour'
 interface HeatmapCell { key: string; date: string; item: PlayTrendItem | null }
@@ -163,27 +164,6 @@ function buildDateWeeks(items: PlayTrendItem[]): HeatmapWeek[] {
   return weeks
 }
 
-function buildDateMonthLabels(weeks: HeatmapWeek[], items: PlayTrendItem[]) {
-  if (!weeks.length || !items.length) return []
-  const validDates = new Set(items.map((item) => item.date))
-  const seenMonths = new Set<string>()
-  const labels: Array<{ key: string; text: string; column: number }> = []
-  weeks.forEach((week, index) => {
-    const firstVisible = week.cells.find((cell) => validDates.has(cell.date))
-    if (!firstVisible) return
-    const date = parseDateKey(firstVisible.date)
-    const monthKey = `${date.getFullYear()}-${date.getMonth()}`
-    if (seenMonths.has(monthKey)) return
-    seenMonths.add(monthKey)
-    labels.push({
-      key: monthKey,
-      text: date.getMonth() === 0 ? `${date.getFullYear()}年 1月` : `${date.getMonth() + 1}月`,
-      column: index + 1
-    })
-  })
-  return labels
-}
-
 function parseDateKey(value: string): Date {
   const [year, month, day] = value.split('-').map(Number)
   return new Date(year, month - 1, day)
@@ -249,10 +229,10 @@ onUnmounted(() => hoverQuery?.removeEventListener('change', updateHoverCapabilit
 .playback-heatmap { min-width: 0; }
 .heatmap-mode { margin-bottom: 14px; }
 .heatmap-scroll { overflow-x: auto; padding: 2px 0 4px; }
-.date-months { --heatmap-columns: 5; display: grid; grid-template-columns: repeat(var(--heatmap-columns), minmax(13px, 18px)); justify-content: space-between; gap: 4px; width: calc(100% - 30px); min-width: max-content; margin: 0 0 9px 30px; color: var(--app-muted); font-size: 10px; }
+.date-months { --heatmap-columns: 5; display: grid; grid-template-columns: repeat(var(--heatmap-columns), minmax(13px, 18px)); justify-content: space-between; gap: 4px; width: calc(100% - 22px); min-width: max-content; min-height: 14px; margin: 0 0 9px 22px; color: var(--app-muted); font-size: 10px; line-height: 14px; }
 .date-months span { white-space: nowrap; }
-.date-layout { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; width: 100%; min-width: max-content; }
-.date-weekdays { display: grid; grid-template-rows: repeat(7, 18px); gap: 4px; width: 20px; color: var(--app-muted); font-size: 9px; line-height: 18px; text-align: right; }
+.date-layout { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; width: 100%; min-width: max-content; }
+.date-weekdays { display: grid; grid-template-rows: repeat(7, 18px); gap: 4px; width: 16px; color: color-mix(in srgb, var(--app-muted) 82%, transparent); font-size: 9px; line-height: 18px; text-align: right; }
 .date-grid { --heatmap-columns: 5; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 18px); grid-template-columns: repeat(var(--heatmap-columns), minmax(13px, 18px)); justify-content: space-between; gap: 4px; width: 100%; min-width: max-content; }
 .heatmap-cell { display: block; width: 18px; height: 18px; border-radius: 3px; background: var(--app-data-0); }
 .heatmap-cell.is-outside { visibility: hidden; }

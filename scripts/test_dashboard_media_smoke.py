@@ -11,6 +11,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from app.services import fntv_schema_adapter as adapter  # noqa: E402
+from app.services import report_service  # noqa: E402
 
 
 def _connect() -> sqlite3.Connection:
@@ -20,7 +21,9 @@ def _connect() -> sqlite3.Connection:
         """
         CREATE TABLE user (
             guid TEXT PRIMARY KEY,
-            username TEXT
+            username TEXT,
+            update_time INTEGER,
+            visible INTEGER DEFAULT 1
         );
         CREATE TABLE item (
             guid TEXT PRIMARY KEY,
@@ -31,7 +34,9 @@ def _connect() -> sqlite3.Connection:
             parent_guid TEXT,
             runtime INTEGER,
             season_number INTEGER,
-            episode_number INTEGER
+            episode_number INTEGER,
+            update_time INTEGER,
+            visible INTEGER DEFAULT 1
         );
         CREATE TABLE item_user_play (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,6 +57,8 @@ def test_today_plays_normalizes_millisecond_timestamps(conn: sqlite3.Connection)
     today_start, _ = adapter._local_day_bounds()
     yesterday_ms = (today_start - 60) * 1000
     today_ms = (today_start + 60) * 1000
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute('INSERT INTO item (guid, title, type) VALUES (?, ?, ?)', ("m1", "电影一", "Movie"))
     conn.executemany(
         'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, visible) VALUES (?, ?, ?, ?, ?)',
         [
@@ -61,6 +68,57 @@ def test_today_plays_normalizes_millisecond_timestamps(conn: sqlite3.Connection)
     )
     assert adapter._count_play_records(conn, schema) == 2
     assert adapter._count_today_plays(conn, schema) == 1
+
+
+def test_history_and_report_share_valid_play_scope(conn: sqlite3.Connection) -> None:
+    now = int(datetime.now().timestamp())
+    conn.executemany(
+        'INSERT INTO user (guid, username, visible) VALUES (?, ?, ?)',
+        [("u1", "alice", 1), ("u-hidden", "hidden", 0)],
+    )
+    conn.executemany(
+        'INSERT INTO item (guid, title, type, visible) VALUES (?, ?, ?, ?)',
+        [("m1", "电影一", "Movie", 1), ("m-hidden", "隐藏媒体", "Movie", 0)],
+    )
+    conn.executemany(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, visible) VALUES (?, ?, ?, ?, ?)',
+        [("u1", "m1", now - index, now - index, 1) for index in range(51)],
+    )
+    conn.executemany(
+        'INSERT INTO item_user_play (user_guid, item_guid, update_time, create_time, visible) VALUES (?, ?, ?, ?, ?)',
+        [
+            ("u-hidden", "m1", now + 3, now + 3, 1),
+            ("u1", "m-hidden", now + 2, now + 2, 1),
+            ("missing-user", "missing-item", now + 1, now + 1, 1),
+        ],
+    )
+
+    history = adapter.history_page(1, 50, {"range": "all"}, conn=conn)
+    report = report_service.overview(conn=conn)
+
+    assert history["total"] == 51
+    assert report["total_play_records"] == history["total"]
+    assert len(history["items"]) == 50
+    assert len({item["record_key"] for item in history["items"]}) == 50
+    assert all(item["user_guid"] == "u1" and item["item_guid"] == "m1" for item in history["items"])
+
+
+def test_history_record_key_does_not_collapse_duplicate_source_ids(conn: sqlite3.Connection) -> None:
+    conn.execute('DROP TABLE item_user_play')
+    conn.execute(
+        'CREATE TABLE item_user_play (id INTEGER, user_guid TEXT, item_guid TEXT, update_time INTEGER, visible INTEGER DEFAULT 1)'
+    )
+    conn.execute('INSERT INTO user (guid, username) VALUES (?, ?)', ("u1", "alice"))
+    conn.execute('INSERT INTO item (guid, title, type) VALUES (?, ?, ?)', ("m1", "电影一", "Movie"))
+    conn.executemany(
+        'INSERT INTO item_user_play (id, user_guid, item_guid, update_time, visible) VALUES (?, ?, ?, ?, ?)',
+        [(7, "u1", "m1", 2, 1), (7, "u1", "m1", 1, 1)],
+    )
+
+    history = adapter.history_page(1, 50, {"range": "all"}, conn=conn)
+    assert history["total"] == 2
+    assert [item["id"] for item in history["items"]] == ["7", "7"]
+    assert len({item["record_key"] for item in history["items"]}) == 2
 
 
 def test_recent_activities_supports_twenty_items(conn: sqlite3.Connection) -> None:
@@ -249,6 +307,8 @@ def test_history_keyword_search_matches_parent_series_title(conn: sqlite3.Connec
 def main() -> None:
     for test in (
         test_today_plays_normalizes_millisecond_timestamps,
+        test_history_and_report_share_valid_play_scope,
+        test_history_record_key_does_not_collapse_duplicate_source_ids,
         test_recent_activities_supports_twenty_items,
         test_media_title_fallback_skips_hash_title,
         test_media_title_deduplicates_repeated_parent_and_marker,

@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
@@ -114,6 +114,7 @@ import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { formatInstant } from '../utils/applicationTime'
 import { readSuccessfulData } from '../utils/successfulDataCache'
+import { shouldRefreshWhenVisible, VISIBILITY_REFRESH_STALE_MS } from '../utils/visibilityRefresh'
 import AppTooltip from '../components/AppTooltip.vue'
 
 interface DashboardFreshness {
@@ -134,6 +135,8 @@ const refreshedAt = ref('-')
 const dashboardFreshness = ref<DashboardFreshness | null>(null)
 const drawerVisible = ref(false)
 let statusTimer: number | undefined
+let lastPageRefreshAt = Date.now()
+let lastVisibilityRefreshAttemptAt = 0
 theme.init()
 
 const darkMode = computed({
@@ -229,6 +232,7 @@ async function refreshCurrentPage() {
     }
     await refreshDatabaseStatus()
     await router.replace({ path: route.path, query: { ...route.query, refresh: String(Date.now()) } })
+    lastPageRefreshAt = Date.now()
   } finally {
     refreshing.value = false
   }
@@ -254,18 +258,44 @@ async function handleUserCommand(command: string) {
 
 function updateDashboardFreshness(event: Event): void {
   const detail = (event as CustomEvent<DashboardFreshness>).detail
-  if (detail && typeof detail.updatedAt === 'number') dashboardFreshness.value = detail
+  if (detail && typeof detail.updatedAt === 'number') {
+    dashboardFreshness.value = detail
+    lastPageRefreshAt = Math.max(lastPageRefreshAt, detail.updatedAt)
+  }
 }
+
+async function refreshVisiblePage(): Promise<void> {
+  const now = Date.now()
+  const updatedAt = route.path === '/dashboard' ? dashboardFreshness.value?.updatedAt : lastPageRefreshAt
+  if (refreshing.value || !shouldRefreshWhenVisible(document.visibilityState, updatedAt, lastVisibilityRefreshAttemptAt, now, VISIBILITY_REFRESH_STALE_MS)) return
+  lastVisibilityRefreshAttemptAt = now
+  try {
+    await router.replace({ path: route.path, query: { ...route.query, refresh: String(now) } })
+  } catch {
+    // The active view keeps its last successful data and can retry after the stale interval.
+  }
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'visible') void refreshVisiblePage()
+}
+
+watch(() => route.path, () => {
+  lastPageRefreshAt = Date.now()
+  lastVisibilityRefreshAttemptAt = 0
+})
 
 onMounted(() => {
   dashboardFreshness.value = readSuccessfulData<DashboardFreshness>('fntv.dashboard.v1.freshness')?.data || null
   window.addEventListener('fntv-dashboard-freshness', updateDashboardFreshness)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   void refreshDatabaseStatus()
   statusTimer = window.setInterval(refreshDatabaseStatus, 60_000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('fntv-dashboard-freshness', updateDashboardFreshness)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (statusTimer) window.clearInterval(statusTimer)
 })
 </script>

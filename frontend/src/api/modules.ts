@@ -14,6 +14,7 @@ export interface DashboardOverview {
 
 export interface HistoryItem {
   id: string
+  record_key?: string
   user_guid: string
   username: string
   user: string
