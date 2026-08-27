@@ -439,7 +439,6 @@ services:
       - /usr/local/apps/@appdata/trim.media/database:/fntv
     environment:
       APP_ENV: production
-      APP_SECRET_KEY: change-this-to-a-long-random-string
       FNTV_DB_PATH: /fntv/trimmedia.db
       ADMIN_DB_PATH: /data/admin.db
       LOG_DIR: /data/logs
@@ -460,7 +459,7 @@ services:
 ```env
 APP_NAME=fntv-admin
 APP_ENV=production
-APP_SECRET_KEY=change-me
+# APP_SECRET_KEY 可选；未设置时由应用写入 /data/admin.db 内部密钥表
 
 FNTV_DB_PATH=/fntv/trimmedia.db
 ADMIN_DB_PATH=/data/admin.db

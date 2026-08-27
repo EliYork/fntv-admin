@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.security import ensure_signing_key
 from app.db.fntv_readonly import open_fntv_connection
 from app.db.fntv_snapshot import (
     refresh_fntv_snapshot,
@@ -34,6 +35,7 @@ def startup_check() -> None:
     settings.cache_dir.mkdir(parents=True, exist_ok=True)
     settings.backup_dir.mkdir(parents=True, exist_ok=True)
     run_migrations()
+    ensure_signing_key()
     if settings.fntv_db_path.exists():
         logger.info("fntv source database configured for readonly direct access")
     else:

@@ -29,6 +29,13 @@ class Setting(Base):
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class SystemSecret(Base):
+    __tablename__ = "system_secrets"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class UserProfile(Base):
     __tablename__ = "user_profiles"
     __table_args__ = (UniqueConstraint("fntv_user_guid"),)

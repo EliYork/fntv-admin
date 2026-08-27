@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "fntv-admin"
     app_env: str = "production"
-    app_secret_key: str = Field(default="change-me")
+    app_secret_key: str = Field(default="")
     fntv_db_path: Path = Path("/fntv/trimmedia.db")
     admin_db_path: Path = Path("/data/admin.db")
     log_dir: Path = Path("/data/logs")

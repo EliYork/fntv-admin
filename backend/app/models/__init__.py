@@ -5,6 +5,7 @@ from app.models.admin import (
     CacheEntry,
     MediaProfile,
     Setting,
+    SystemSecret,
     TaskLog,
     UserProfile,
 )
@@ -16,7 +17,7 @@ __all__ = [
     "CacheEntry",
     "MediaProfile",
     "Setting",
+    "SystemSecret",
     "TaskLog",
     "UserProfile",
 ]
-

@@ -54,7 +54,6 @@ Compose 导入时可通过 `FNTV_ADMIN_PORT` 自定义宿主机端口；不要�
 
 ```env
 APP_ENV=production
-APP_SECRET_KEY=change-this-to-a-long-random-string
 TZ=Asia/Shanghai
 FNTV_DB_PATH=/fntv/trimmedia.db
 ADMIN_DB_PATH=/data/admin.db
@@ -68,7 +67,7 @@ SNAPSHOT_ENABLED=false
 ACTIVE_WATCH_WINDOW_SECONDS=300
 ```
 
-`APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串，不要沿用示例值。
+`APP_SECRET_KEY` 可不设置，此时应用会在 `/data/admin.db` 的独立内部密钥表中自动生成并持久化强随机 JWT 密钥（不会通过设置 API 返回）。如需显式设置，必须使用至少 32 个字符的随机值；公开占位值和过短密钥不会被用于签名。
 
 启动后访问：
 

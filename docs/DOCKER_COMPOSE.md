@@ -34,7 +34,6 @@ services:
 
     environment:
       APP_ENV: production
-      APP_SECRET_KEY: change-this-to-a-long-random-string
       TZ: Asia/Shanghai
 
       FNTV_DB_PATH: /fntv/trimmedia.db
@@ -48,7 +47,7 @@ services:
       ACTIVE_WATCH_WINDOW_SECONDS: "300"
 ```
 
-`APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串。
+未显式设置 `APP_SECRET_KEY` 时，应用会在 `/data/admin.db` 的独立内部密钥表中自动生成并持久化强随机 JWT 密钥（不会通过设置 API 返回）。也可以显式提供至少 32 个字符的随机密钥；公开占位值和过短密钥不会被用于签名。
 
 默认宿主机端口为 `18080`，容器内部端口保持 `8080`。如需自定义，在 `.env` 中设置 `FNTV_ADMIN_PORT` 后重新运行 `docker compose up -d`。
 

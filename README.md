@@ -46,7 +46,6 @@ services:
 
     environment:
       APP_ENV: production
-      APP_SECRET_KEY: change-this-to-a-long-random-string
       TZ: Asia/Shanghai
 
       FNTV_DB_PATH: /fntv/trimmedia.db
@@ -92,7 +91,7 @@ http://飞牛IP:18080
 
 首次进入时创建管理员账号。管理员密码只会以 hash 形式写入 `/data/admin.db`。
 
-`APP_SECRET_KEY` 必须在部署前改成足够长的随机字符串，不要沿用示例值。
+未显式设置 `APP_SECRET_KEY` 时，应用会在 `/data/admin.db` 的独立内部密钥表中自动生成并持久化强随机 JWT 密钥（不会通过设置 API 返回）。也可以通过环境变量提供至少 32 个字符的随机密钥；公开占位值和过短密钥不会被用于签名。
 
 ## 访问控制
 
