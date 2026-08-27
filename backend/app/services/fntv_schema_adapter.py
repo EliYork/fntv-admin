@@ -445,7 +445,15 @@ def user_stats(guid: str) -> dict[str, Any]:
         return _empty_user_stats(guid)
 
 
-def media_page(page: int, page_size: int, db: Session | None = None, keyword: str | None = None, media_type: str | None = None, show_hidden: bool = False) -> dict[str, Any]:
+def media_page(
+    page: int,
+    page_size: int,
+    db: Session | None = None,
+    keyword: str | None = None,
+    media_type: str | None = None,
+    show_hidden: bool = False,
+    scope: str | None = None,
+) -> dict[str, Any]:
     try:
         schema = detect_schema()
         if not schema.items.table:
@@ -454,7 +462,18 @@ def media_page(page: int, page_size: int, db: Session | None = None, keyword: st
         profiles = _media_profiles(db)
         hidden_guids = set() if show_hidden else {guid for guid, profile in profiles.items() if profile.hidden}
         with open_fntv_connection() as conn:
-            rows, total = _entity_rows(conn, schema.items, schema, keyword, page_num, clean_page_size, "media", media_type, hidden_guids)
+            rows, total = _entity_rows(
+                conn,
+                schema.items,
+                schema,
+                keyword,
+                page_num,
+                clean_page_size,
+                "media",
+                media_type,
+                hidden_guids,
+                library_scope=scope == "library",
+            )
             stats = _media_stats_for(conn, schema, [_row_value(row, schema.items.fields.get("guid")) for row in rows])
             parent_titles = _parent_titles(conn, schema, rows)
             children_counts = _children_counts(conn, schema, [_row_value(row, schema.items.fields.get("guid")) for row in rows])
@@ -488,9 +507,15 @@ def media_children(guid: str) -> list[dict[str, Any]]:
             return []
         guid_col = schema.items.fields.get("guid")
         with open_fntv_connection() as conn:
-            rows = conn.execute(f"SELECT *, rowid AS __rowid FROM {quote_identifier(schema.items.table)} WHERE {quote_identifier(parent_col)} = ? LIMIT 200", (guid,)).fetchall()
+            order_sql = _media_children_order_sql(schema)
+            rows = conn.execute(
+                f"SELECT *, rowid AS __rowid FROM {quote_identifier(schema.items.table)} "
+                f"WHERE {quote_identifier(parent_col)} = ?{order_sql} LIMIT 500",
+                (guid,),
+            ).fetchall()
             children_counts = _children_counts(conn, schema, [_row_value(dict(row), guid_col) for row in rows])
-            return [_media_row(dict(row), schema, {}, {}, {}, children_counts) for row in rows]
+            parent_titles = {guid: _parent_title_for_children(conn, schema, guid)}
+            return [_media_row(dict(row), schema, {}, {}, parent_titles, children_counts) for row in rows]
     except (AppError, sqlite3.Error):
         return []
 
@@ -1171,6 +1196,7 @@ def _entity_rows(
     kind: str,
     media_type: str | None = None,
     exclude_guids: set[str] | None = None,
+    library_scope: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     if not fmap.table:
         return [], 0
@@ -1184,7 +1210,12 @@ def _entity_rows(
             where.append("(" + " OR ".join(f"{quote_identifier(col)} LIKE ?" for col in cols) + ")")
             params.extend([f"%{keyword}%"] * len(cols))
     type_col = fmap.fields.get("media_type")
-    if kind == "media" and media_type and type_col:
+    if kind == "media" and library_scope:
+        library_clause, library_params = _top_level_media_clause(fmap, media_type)
+        if library_clause:
+            where.append(library_clause)
+            params.extend(library_params)
+    elif kind == "media" and media_type and type_col:
         where.append(f"LOWER({quote_identifier(type_col)}) = LOWER(?)")
         params.append(media_type)
     guid_col = fmap.fields.get("guid")
@@ -1200,6 +1231,66 @@ def _entity_rows(
     count = conn.execute(f"SELECT COUNT(*) AS total FROM {quote_identifier(fmap.table)}{where_sql}", params).fetchone()
     rows = conn.execute(f"SELECT *, rowid AS __rowid FROM {quote_identifier(fmap.table)}{where_sql}{order_sql} LIMIT ? OFFSET ?", (*params, clean_page_size, offset)).fetchall()
     return [dict(row) for row in rows], int(count["total"]) if count else 0
+
+
+def _top_level_media_clause(fmap: FntvFieldMap, media_type: str | None) -> tuple[str, list[Any]]:
+    type_col = fmap.fields.get("media_type")
+    parent_col = fmap.fields.get("parent_guid")
+    if not type_col:
+        if parent_col:
+            parent = quote_identifier(parent_col)
+            return f"({parent} IS NULL OR TRIM(CAST({parent} AS TEXT)) = '')", []
+        return "", []
+
+    media_type_expr = f"LOWER(TRIM(COALESCE(CAST({quote_identifier(type_col)} AS TEXT), '')))"
+    requested = (media_type or "").strip().lower()
+    if requested == "movie":
+        return f"{media_type_expr} = ?", ["movie"]
+    if requested in {"series", "tv"}:
+        return f"{media_type_expr} IN (?, ?)", ["series", "tv"]
+
+    excluded = ("season", "episode", "directory", "mediadb")
+    placeholders = ", ".join("?" for _ in excluded)
+    allowed = f"{media_type_expr} NOT IN ({placeholders})"
+    if parent_col:
+        parent = quote_identifier(parent_col)
+        known_top_level = f"{media_type_expr} IN (?, ?, ?)"
+        no_parent = f"({parent} IS NULL OR TRIM(CAST({parent} AS TEXT)) = '')"
+        return f"({known_top_level} OR ({allowed} AND {no_parent}))", ["movie", "series", "tv", *excluded]
+    return allowed, list(excluded)
+
+
+def _media_children_order_sql(schema: FntvSchemaInfo) -> str:
+    fields = schema.items.fields
+    type_col = fields.get("media_type")
+    season_col = fields.get("season_number")
+    episode_col = fields.get("episode_number")
+    title_col = fields.get("title")
+    parts: list[str] = []
+    if type_col:
+        media_type = f"LOWER(COALESCE(CAST({quote_identifier(type_col)} AS TEXT), ''))"
+        parts.append(f"CASE {media_type} WHEN 'season' THEN 0 WHEN 'episode' THEN 1 ELSE 2 END")
+    if season_col:
+        parts.append(f"CASE WHEN {quote_identifier(season_col)} IS NULL OR TRIM(CAST({quote_identifier(season_col)} AS TEXT)) = '' THEN 1 ELSE 0 END")
+        parts.append(f"CAST(COALESCE(NULLIF({quote_identifier(season_col)}, ''), 0) AS INTEGER) ASC")
+    if episode_col:
+        parts.append(f"CASE WHEN {quote_identifier(episode_col)} IS NULL OR TRIM(CAST({quote_identifier(episode_col)} AS TEXT)) = '' THEN 1 ELSE 0 END")
+        parts.append(f"CAST(COALESCE(NULLIF({quote_identifier(episode_col)}, ''), 0) AS INTEGER) ASC")
+    if title_col:
+        parts.append(f"LOWER(COALESCE(CAST({quote_identifier(title_col)} AS TEXT), '')) ASC")
+    parts.append("rowid ASC")
+    return " ORDER BY " + ", ".join(parts)
+
+
+def _parent_title_for_children(conn: sqlite3.Connection, schema: FntvSchemaInfo, guid: str) -> str:
+    guid_col = schema.items.fields.get("guid")
+    if not schema.items.table or not guid_col:
+        return guid
+    row = conn.execute(
+        f"SELECT * FROM {quote_identifier(schema.items.table)} WHERE {quote_identifier(guid_col)} = ? LIMIT 1",
+        (guid,),
+    ).fetchone()
+    return _display_item(dict(row), schema) if row else guid
 
 
 def _user_rows(
@@ -1360,6 +1451,8 @@ def _media_row(row: dict[str, Any], schema: FntvSchemaInfo, profiles: dict[str, 
         "release_time": normalize_timestamp(_row_value(row, schema.items.fields.get("release_date"))) or "",
         "parent": parent_titles.get(parent_guid) or parent_guid,
         "parent_guid": parent_guid,
+        "season_number": _optional_int(_row_value(row, schema.items.fields.get("season_number"))),
+        "episode_number": _optional_int(_row_value(row, schema.items.fields.get("episode_number"))),
         "children_count": children_counts.get(guid, 0),
         "play_count": row_stats.get("play_count", 0),
         "last_play_at": row_stats.get("recent_play_at") or "",
@@ -1367,6 +1460,15 @@ def _media_row(row: dict[str, Any], schema: FntvSchemaInfo, profiles: dict[str, 
         "favorite": bool(profile.favorite) if profile else False,
         "note": profile.note if profile else None,
     }
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _media_hierarchy_fallback_title(row: dict[str, Any], schema: FntvSchemaInfo, parent_titles: dict[str, str]) -> str | None:

@@ -19,10 +19,21 @@ def list_media(
     page_size: int = Query(default=20, ge=1),
     keyword: str | None = None,
     media_type: str | None = None,
+    scope: str | None = Query(default=None, pattern="^(library)?$"),
     show_hidden: bool = False,
     db: Session = Depends(get_session),
 ):
-    return ok(fntv_adapter.media_page(page, page_size, db=db, keyword=keyword, media_type=media_type, show_hidden=show_hidden))
+    return ok(
+        fntv_adapter.media_page(
+            page,
+            page_size,
+            db=db,
+            keyword=keyword,
+            media_type=media_type,
+            show_hidden=show_hidden,
+            scope=scope,
+        )
+    )
 
 
 @router.get("/tree")

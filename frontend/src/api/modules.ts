@@ -63,6 +63,8 @@ export interface MediaItem {
   release_time?: string | number | null
   parent?: string | null
   parent_guid?: string | null
+  season_number?: number | null
+  episode_number?: number | null
   children_count: number
   play_count: number
   last_play_at?: string | number | null
@@ -191,6 +193,10 @@ export function hideUser(guid: string, hidden: boolean) {
 
 export function fetchMedia(params: Record<string, unknown>) {
   return getApi<PageData<MediaItem>>('/media', params)
+}
+
+export function fetchMediaChildren(guid: string) {
+  return getApi<MediaItem[]>(`/media/${encodeURIComponent(guid)}/children`, undefined, { suppressGlobalError: true })
 }
 
 export function updateMediaProfile(guid: string, data: { display_title?: string; note?: string }) {
