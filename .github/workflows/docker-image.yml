@@ -4,9 +4,14 @@ on:
   push:
     branches:
       - main
+      - develop
     tags:
       - "v*.*.*"
   workflow_dispatch:
+
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -50,8 +55,8 @@ jobs:
         with:
           images: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
             type=ref,event=tag
 
       - name: Extract Docker Hub metadata
@@ -61,8 +66,8 @@ jobs:
         with:
           images: docker.io/${{ env.DOCKERHUB_USERNAME }}/fntv-admin
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
             type=ref,event=tag
 
       - name: Build and push GHCR Docker image
