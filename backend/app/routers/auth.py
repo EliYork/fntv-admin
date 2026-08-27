@@ -19,16 +19,13 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def auth_status(request: Request, db: Session = Depends(get_session)):
     auth_policy_service.enforce_auth_endpoint_allowed(db, request)
     initialized = auth_service.admin_exists(db)
-    if not initialized:
-        initialization_service.ensure_initialization_token()
-    return ok({"admin_initialized": initialized, "initialization_token_required": not initialized})
+    return ok({"admin_initialized": initialized})
 
 
 @router.post("/init-admin")
-def init_admin(payload: InitAdminRequest, request: Request, db: Session = Depends(get_session)):
-    auth_policy_service.enforce_auth_endpoint_allowed(db, request)
+def init_admin(payload: InitAdminRequest, db: Session = Depends(get_session)):
     db.rollback()
-    user = initialization_service.create_initial_admin(payload.username, payload.password, payload.initialization_token)
+    user = initialization_service.create_initial_admin(payload.username, payload.password)
     return ok({"user": user.model_dump()})
 
 

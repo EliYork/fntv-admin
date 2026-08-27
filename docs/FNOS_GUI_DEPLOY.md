@@ -76,7 +76,7 @@ ACTIVE_WATCH_WINDOW_SECONDS=300
 http://飞牛IP:18080
 ```
 
-首次进入需要初始化管理员账号。先在 Compose 文件目录运行 `docker compose exec fntv-admin cat /data/init-admin.token` 获取一次性初始化凭据；创建成功后凭据文件会自动删除。
+首次进入时直接在页面填写用户名和密码创建管理员，不需要 SSH、终端或额外部署步骤。建议先通过可信局域网完成管理员创建，再配置公网映射或反向代理；尚未创建管理员的实例不要直接暴露到不可信网络。
 
 ## 访问控制建议
 

@@ -15,7 +15,6 @@ export interface AdminUser {
 
 export interface AuthStatus {
   admin_initialized: boolean
-  initialization_token_required: boolean
 }
 
 export interface TokenPayload {
@@ -49,8 +48,8 @@ export function fetchAuthStatus() {
   return getApi<AuthStatus>('/auth/status')
 }
 
-export function initAdmin(username: string, password: string, initializationToken: string) {
-  return postApi<{ user: AdminUser }>('/auth/init-admin', { username, password, initialization_token: initializationToken })
+export function initAdmin(username: string, password: string) {
+  return postApi<{ user: AdminUser }>('/auth/init-admin', { username, password })
 }
 
 export function login(username: string, password: string) {

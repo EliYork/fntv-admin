@@ -75,32 +75,39 @@ def test_remote_deny_policy_blocks_remote_before_login(db: Session) -> None:
     assert code == "403:REMOTE_ACCESS_DENIED"
 
 
-def test_proxy_headers_are_not_trusted_by_default(db: Session) -> None:
+def test_spoofed_proxy_headers_fail_closed_by_default(db: Session) -> None:
     auth_policy_service.save_auth_policy(db, local_auth_required=False, remote_access_policy="deny")
     request = _request("192.168.1.20", {"x-forwarded-for": "8.8.8.8"})
-    principal = deps.get_current_admin(request=request, credentials=None, db=db)
-    assert principal.auth_mode == "local_no_auth"
-    assert principal.client_ip == "192.168.1.20"
+    code = _deny_code(lambda: deps.get_current_admin(request=request, credentials=None, db=db))
+    assert code == "403:REMOTE_ACCESS_DENIED"
 
 
 def test_proxy_headers_are_used_when_enabled(db: Session) -> None:
-    original = auth_policy_service.settings.trust_proxy_headers
+    original_trust = auth_policy_service.settings.trust_proxy_headers
+    original_proxies = auth_policy_service.settings.trusted_proxies
     auth_policy_service.settings.trust_proxy_headers = True
+    auth_policy_service.settings.trusted_proxies = "192.168.1.20/32"
     try:
         auth_policy_service.save_auth_policy(db, local_auth_required=False, remote_access_policy="deny")
         request = _request("192.168.1.20", {"x-forwarded-for": "8.8.8.8"})
         code = _deny_code(lambda: deps.get_current_admin(request=request, credentials=None, db=db))
         assert code == "403:REMOTE_ACCESS_DENIED"
     finally:
-        auth_policy_service.settings.trust_proxy_headers = original
+        auth_policy_service.settings.trust_proxy_headers = original_trust
+        auth_policy_service.settings.trusted_proxies = original_proxies
 
 
 def test_invalid_token_still_rejected_under_login_policy(db: Session) -> None:
-    auth_policy_service.save_auth_policy(db, local_auth_required=True, remote_access_policy="login")
-    request = _request("192.168.1.20")
-    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bad-token")
-    code = _deny_code(lambda: deps.get_current_admin(request=request, credentials=credentials, db=db))
-    assert code == "401:INVALID_TOKEN"
+    original_secret = auth_policy_service.settings.app_secret_key
+    auth_policy_service.settings.app_secret_key = "smoke-test-signing-key-32-characters"
+    try:
+        auth_policy_service.save_auth_policy(db, local_auth_required=True, remote_access_policy="login")
+        request = _request("192.168.1.20")
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="bad-token")
+        code = _deny_code(lambda: deps.get_current_admin(request=request, credentials=credentials, db=db))
+        assert code == "401:INVALID_TOKEN"
+    finally:
+        auth_policy_service.settings.app_secret_key = original_secret
 
 
 def main() -> None:
@@ -109,7 +116,7 @@ def main() -> None:
         test_local_no_auth_allows_local_me_and_protected_dependency,
         test_remote_login_policy_still_requires_jwt,
         test_remote_deny_policy_blocks_remote_before_login,
-        test_proxy_headers_are_not_trusted_by_default,
+        test_spoofed_proxy_headers_fail_closed_by_default,
         test_proxy_headers_are_used_when_enabled,
         test_invalid_token_still_rejected_under_login_policy,
     ]

@@ -18,6 +18,7 @@ from app.core.deps import get_current_admin
 from app.core.errors import AppError
 from app.db.migrations import migrate_admin_schema
 from app.models import AdminUser, Base
+from app.schemas.auth import InitAdminRequest
 from app.services import auth_policy_service, auth_service, fntv_schema_adapter, initialization_service
 from app.services.login_rate_limiter import LoginRateLimiter
 from app.utils.csv import sanitize_csv_text
@@ -39,19 +40,26 @@ def admin_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return database_path
 
 
-def test_initialization_token_is_one_time_and_concurrent_safe(admin_database: Path) -> None:
-    assert initialization_service.ensure_initialization_token()
-    token_path = initialization_service.initialization_token_path()
-    token = token_path.read_text(encoding="utf-8").strip()
-    assert len(token) >= 32
+def test_initial_admin_requires_only_username_and_password(admin_database: Path) -> None:
+    assert set(InitAdminRequest.model_fields) == {"username", "password"}
+    user = initialization_service.create_initial_admin("admin", "correct-horse-1")
+    assert user.username == "admin"
+    with sqlite3.connect(admin_database) as conn:
+        assert conn.execute("SELECT username FROM admin_users").fetchall() == [("admin",)]
 
-    with pytest.raises(AppError) as invalid:
-        initialization_service.create_initial_admin("remote", "correct-horse-1", "wrong-token" * 4)
-    assert invalid.value.status_code == 403
 
+def test_initial_admin_cannot_be_created_twice(admin_database: Path) -> None:
+    initialization_service.create_initial_admin("admin-one", "correct-horse-1")
+    with pytest.raises(AppError) as repeated:
+        initialization_service.create_initial_admin("admin-two", "correct-horse-2")
+    assert repeated.value.code == "ADMIN_ALREADY_EXISTS"
+    assert repeated.value.status_code == 409
+
+
+def test_initial_admin_creation_is_concurrent_safe(admin_database: Path) -> None:
     def initialize(username: str):
         try:
-            return initialization_service.create_initial_admin(username, "correct-horse-1", token)
+            return initialization_service.create_initial_admin(username, "correct-horse-1")
         except AppError as exc:
             return exc
 
@@ -60,9 +68,25 @@ def test_initialization_token_is_one_time_and_concurrent_safe(admin_database: Pa
 
     assert sum(not isinstance(result, AppError) for result in results) == 1
     assert any(isinstance(result, AppError) and result.code == "ADMIN_ALREADY_EXISTS" for result in results)
-    assert not token_path.exists()
     with sqlite3.connect(admin_database) as conn:
         assert conn.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0] == 1
+
+
+def test_legacy_initialization_file_is_ignored(admin_database: Path) -> None:
+    legacy_path = settings.data_dir / ("init-admin" + ".token")
+    legacy_path.write_text("obsolete-value\n", encoding="utf-8")
+    user = initialization_service.create_initial_admin("admin", "correct-horse-1")
+    assert user.username == "admin"
+    assert legacy_path.read_text(encoding="utf-8") == "obsolete-value\n"
+
+
+def test_initialized_account_can_login(admin_database: Path) -> None:
+    initialization_service.create_initial_admin("admin", "correct-horse-1")
+    engine = create_engine(f"sqlite:///{admin_database.as_posix()}")
+    with Session(engine) as db:
+        result = auth_service.login(db, "admin", "correct-horse-1", "192.168.1.20", "test")
+        assert result.token
+        assert result.user.username == "admin"
 
 
 def test_proxy_headers_require_a_trusted_direct_peer(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
@@ -14,14 +15,17 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from app.core import deps  # noqa: E402
+from app.core.config import settings as app_settings  # noqa: E402
 from app.core.errors import AppError  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.routers import auth, dashboard, history, media, reports, settings, system, users  # noqa: E402
-from app.services import auth_policy_service, auth_service, fntv_adapter, report_service, system_service  # noqa: E402
+from app.services import auth_policy_service, auth_service, fntv_adapter, initialization_service, report_service, system_service  # noqa: E402
 
 
-def _session_factory():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+def _session_factory(database_path: Path | None = None):
+    database_url = f"sqlite:///{database_path.as_posix()}" if database_path else "sqlite://"
+    pool_class = NullPool if database_path else StaticPool
+    engine = create_engine(database_url, connect_args={"check_same_thread": False}, poolclass=pool_class)
     Base.metadata.create_all(bind=engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -105,41 +109,67 @@ def _principal(db: Session, token: str):
 
 
 def test_valid_token_is_stable_across_protected_api() -> None:
-    session_factory = _session_factory()
-    db: Session = session_factory()
-    try:
-        auth_service.create_initial_admin(db, "admin", "password123")
-        token = _token(db)
-        first_principal = _principal(db, token)
-        second_principal = _principal(db, token)
-        assert first_principal.username == second_principal.username == "admin"
-        assert first_principal.auth_mode == second_principal.auth_mode == "jwt"
-        assert first_principal.local_auth_required is True
-        assert first_principal.remote_access_policy == "login"
-    finally:
-        db.close()
-
-    originals = _patch_read_services()
-    try:
-        db = session_factory()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        original_admin_db_path = app_settings.admin_db_path
+        original_app_secret_key = app_settings.app_secret_key
+        app_settings.admin_db_path = Path(temp_dir) / "admin.db"
+        app_settings.app_secret_key = "smoke-test-signing-key-32-characters"
         try:
-            principal = _principal(db, token)
-            responses = [
-                auth.me(current_user=principal),
-                dashboard.overview(),
-                history.list_history(),
-                users.list_users(db=db),
-                media.list_media(db=db),
-                reports.overview(),
-                system.database_status(detail=True, _=principal),
-                settings.get_settings(db=db),
-            ]
-            for response in responses:
-                assert response["success"] is True
+            session_factory = _session_factory(app_settings.admin_db_path)
+            initialization_service.create_initial_admin("admin", "password123")
+            try:
+                initialization_service.create_initial_admin("second-admin", "password456")
+            except AppError as exc:
+                assert exc.status_code == 409
+            else:
+                raise AssertionError("second initialization should be rejected")
+
+            db: Session = session_factory()
+            try:
+                token = _token(db)
+                first_principal = _principal(db, token)
+                second_principal = _principal(db, token)
+                assert first_principal.username == second_principal.username == "admin"
+                assert first_principal.auth_mode == second_principal.auth_mode == "jwt"
+                assert first_principal.local_auth_required is True
+                assert first_principal.remote_access_policy == "login"
+
+                replacement = auth_service.change_password(db, first_principal.admin_user, "password123", "password456")
+                try:
+                    _principal(db, token)
+                except AppError as exc:
+                    assert exc.status_code == 401
+                else:
+                    raise AssertionError("old token should be rejected after password change")
+                assert _principal(db, replacement.token).username == "admin"
+            finally:
+                db.close()
+
+            originals = _patch_read_services()
+            try:
+                db = session_factory()
+                try:
+                    principal = _principal(db, replacement.token)
+                    responses = [
+                        auth.me(current_user=principal),
+                        dashboard.overview(),
+                        history.list_history(),
+                        users.list_users(db=db),
+                        media.list_media(db=db),
+                        reports.overview(),
+                        system.database_status(detail=True, _=principal),
+                        settings.get_settings(db=db),
+                    ]
+                    for response in responses:
+                        assert response["success"] is True
+                finally:
+                    db.close()
+            finally:
+                _restore_read_services(originals)
         finally:
-            db.close()
-    finally:
-        _restore_read_services(originals)
+            session_factory.kw["bind"].dispose()
+            app_settings.admin_db_path = original_admin_db_path
+            app_settings.app_secret_key = original_app_secret_key
 
 
 def test_missing_token_returns_401_for_protected_api() -> None:
