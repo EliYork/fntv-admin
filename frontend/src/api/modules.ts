@@ -191,8 +191,8 @@ export function hideUser(guid: string, hidden: boolean) {
   return postApi(`/users/${encodeURIComponent(guid)}/${hidden ? 'hide' : 'unhide'}`)
 }
 
-export function fetchMedia(params: Record<string, unknown>) {
-  return getApi<PageData<MediaItem>>('/media', params)
+export function fetchMedia(params: Record<string, unknown>, options?: { suppressGlobalError?: boolean }) {
+  return getApi<PageData<MediaItem>>('/media', params, options)
 }
 
 export function fetchMediaChildren(guid: string) {

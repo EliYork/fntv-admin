@@ -102,6 +102,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { Download, Search } from '@element-plus/icons-vue'
 import { downloadHistoryCsv, fetchHistory, fetchUsers, type HistoryItem, type UserItem } from '../api/modules'
+import { useAutoRefresh } from '../utils/autoRefresh'
 import EmptyState from './EmptyState.vue'
 import { applicationTodayKey, calendarDayDifference, parseApplicationDateTime, type ApplicationDateParts } from '../utils/applicationTime'
 
@@ -133,6 +134,7 @@ const applicationTimezone = ref('Asia/Shanghai')
 const loadSentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 let requestVersion = 0
+const refreshing = ref(false)
 
 const hasMore = computed(() => {
   if (exhausted.value) return false
@@ -153,7 +155,7 @@ const groups = computed<HistoryGroup[]>(() => {
 })
 
 async function loadNextPage() {
-  if (initialLoading.value || loadingMore.value || exhausted.value) return
+  if (initialLoading.value || refreshing.value || loadingMore.value || exhausted.value) return
   const requestedPage = nextPage.value
   const version = requestVersion
   const isInitial = requestedPage === 1 && items.value.length === 0
@@ -188,6 +190,7 @@ async function loadNextPage() {
     errorMessage.value = ''
     exhausted.value = data.items.length === 0 || (requestedPage > 1 && uniqueItems.length === 0) || items.value.length >= data.total || data.page >= data.pages
   } catch {
+    if (version !== requestVersion) return
     // Keep every previously committed page and retry the same nextPage later.
     errorMessage.value = items.value.length ? '加载更多失败，已保留当前记录' : '观看历史加载失败，请稍后重试'
   } finally {
@@ -213,32 +216,47 @@ async function resetAndLoad(preserveExisting = false) {
     exhausted.value = false
   }
   initialLoading.value = items.value.length === 0
+  refreshing.value = true
+  const pagesToRefresh = preserveExisting ? Math.max(1, nextPage.value - 1) : 1
+  const filters = {
+    page_size: pageSize.value,
+    keyword: keyword.value.trim() || undefined,
+    range: range.value,
+    user_guid: userGuid.value || undefined
+  }
   try {
-    const data = await fetchHistory({
-      page: 1,
-      page_size: pageSize.value,
-      keyword: keyword.value.trim() || undefined,
-      range: range.value,
-      user_guid: userGuid.value || undefined
-    })
+    const data = await fetchHistory({ ...filters, page: 1 })
     if (version !== requestVersion) return
     if (data.error) throw new Error('history-data-unavailable')
-    const uniqueItems = deduplicate(data.items)
+    const refreshedItems = [...data.items]
+    let lastPage = data.page
+    for (let page = 2; page <= Math.min(pagesToRefresh, data.pages); page += 1) {
+      const more = await fetchHistory({ ...filters, page })
+      if (version !== requestVersion) return
+      if (more.error) throw new Error('history-data-unavailable')
+      refreshedItems.push(...more.items)
+      lastPage = more.page
+    }
+    const uniqueItems = deduplicate(refreshedItems)
     items.value = uniqueItems
     total.value = data.total
     totalPages.value = data.pages
-    nextPage.value = data.page + 1
-    exhausted.value = data.items.length === 0 || uniqueItems.length >= data.total || data.page >= data.pages
+    nextPage.value = lastPage + 1
+    exhausted.value = data.items.length === 0 || uniqueItems.length >= data.total || lastPage >= data.pages
     applicationTimezone.value = data.application_timezone || applicationTimezone.value
   } catch {
+    if (version !== requestVersion) return
     // Refresh is atomic: existing history remains visible after any failure.
     errorMessage.value = items.value.length ? '更新失败，仍显示上次成功记录' : '观看历史加载失败，请稍后重试'
   } finally {
-    if (version === requestVersion) initialLoading.value = false
+    if (version === requestVersion) { initialLoading.value = false; refreshing.value = false }
   }
+  if (version !== requestVersion) return
   await nextTick()
   setupObserver()
 }
+
+useAutoRefresh(() => resetAndLoad(true), () => refreshing.value || initialLoading.value || loadingMore.value)
 
 async function applyFilters() {
   await resetAndLoad()
@@ -401,7 +419,7 @@ onMounted(async () => {
   await resetAndLoad()
 })
 
-onUnmounted(() => observer?.disconnect())
+onUnmounted(() => { requestVersion += 1; observer?.disconnect() })
 </script>
 
 <style scoped>

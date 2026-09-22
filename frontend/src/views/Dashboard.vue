@@ -21,6 +21,7 @@
     <section class="data-section" aria-labelledby="hourly-title">
       <header class="section-heading">
         <h2 id="hourly-title">播放时段</h2>
+        <small v-if="displayedPeriods.hourly && displayedPeriods.hourly !== hourlyRange" class="section-period">暂显示{{ periodLabel(displayedPeriods.hourly!) }}数据</small>
         <el-select v-model="hourlyRange" class="period-select" size="small" aria-label="播放时段统计周期" @change="loadHourly">
           <el-option v-for="option in rangeOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
@@ -44,6 +45,7 @@
       <article class="rank-panel" aria-labelledby="media-rank-title">
         <header class="section-heading">
           <h2 id="media-rank-title">热门内容</h2>
+          <small v-if="displayedPeriods.topMedia && displayedPeriods.topMedia !== topMediaRange" class="section-period">暂显示{{ periodLabel(displayedPeriods.topMedia!) }}数据</small>
           <el-select v-model="topMediaRange" class="period-select" size="small" aria-label="热门内容统计周期" @change="loadTopMedia">
             <el-option v-for="option in rangeOptions" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
@@ -64,6 +66,7 @@
       <article class="rank-panel" aria-labelledby="user-rank-title">
         <header class="section-heading">
           <h2 id="user-rank-title">活跃用户</h2>
+          <small v-if="displayedPeriods.topUsers && displayedPeriods.topUsers !== topUsersRange" class="section-period">暂显示{{ periodLabel(displayedPeriods.topUsers!) }}数据</small>
           <el-select v-model="topUsersRange" class="period-select" size="small" aria-label="活跃用户统计周期" @change="loadTopUsers">
             <el-option v-for="option in rangeOptions" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
@@ -87,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   fetchDashboardOverview,
   fetchReportHourlyDistribution,
@@ -106,6 +109,7 @@ import EmptyState from '../components/EmptyState.vue'
 import AppTooltip from '../components/AppTooltip.vue'
 import HistoryFeed from '../components/HistoryFeed.vue'
 import PlaybackHeatmap from '../components/PlaybackHeatmap.vue'
+import { useAutoRefresh } from '../utils/autoRefresh'
 import { useRouteRefresh } from '../utils/routeRefresh'
 import { readSuccessfulData, writeSuccessfulData } from '../utils/successfulDataCache'
 
@@ -134,6 +138,8 @@ const loading = ref(false)
 const historyFeed = ref<InstanceType<typeof HistoryFeed> | null>(null)
 let loadRequestVersion = 0
 const moduleRequestVersions: Partial<Record<DashboardModule, number>> = {}
+const pendingPeriods = ref(0)
+const displayedPeriods = ref<Partial<Record<DashboardModule, PeriodRange>>>({})
 
 const metricCards = computed(() => [
   { label: '总用户', value: formatNumber(reportOverview.value?.total_users ?? overview.value?.total_users), note: '全部用户' },
@@ -152,6 +158,8 @@ const hasHourlyData = computed(() => normalizedHourlyItems.value.some((item) => 
 
 async function loadData() {
   const requestVersion = ++loadRequestVersion
+  for (const module of ['hourly', 'topMedia', 'topUsers'] as const) moduleRequestVersions[module] = (moduleRequestVersions[module] || 0) + 1
+  const requestedVersions = { ...moduleRequestVersions }
   const requestedHourlyRange = hourlyRange.value
   const requestedTopMediaRange = topMediaRange.value
   const requestedTopUsersRange = topUsersRange.value
@@ -169,9 +177,9 @@ async function loadData() {
 
   if (dashboard.status === 'fulfilled' && dashboard.value.database_ok && !dashboard.value.error) commitModule('overview', dashboard.value, (value) => { overview.value = value }, cacheKey('overview'), completedAt)
   if (report.status === 'fulfilled') commitModule('report', report.value, (value) => { reportOverview.value = value }, cacheKey('report'), completedAt)
-  if (hourly.status === 'fulfilled' && hourlyRange.value === requestedHourlyRange) commitModule('hourly', hourly.value, (value) => { hourlyItems.value = value }, periodCacheKey('hourly', requestedHourlyRange), completedAt)
-  if (topMedia.status === 'fulfilled' && topMediaRange.value === requestedTopMediaRange) commitModule('topMedia', topMedia.value, (value) => { topMediaItems.value = value }, periodCacheKey('topMedia', requestedTopMediaRange), completedAt)
-  if (topUsers.status === 'fulfilled' && topUsersRange.value === requestedTopUsersRange) commitModule('topUsers', topUsers.value, (value) => { topUserItems.value = value }, periodCacheKey('topUsers', requestedTopUsersRange), completedAt)
+  if (hourly.status === 'fulfilled' && moduleRequestVersions.hourly === requestedVersions.hourly && hourlyRange.value === requestedHourlyRange) commitModule('hourly', hourly.value, (value) => { hourlyItems.value = value; displayedPeriods.value.hourly = requestedHourlyRange }, periodCacheKey('hourly', requestedHourlyRange), completedAt)
+  if (topMedia.status === 'fulfilled' && moduleRequestVersions.topMedia === requestedVersions.topMedia && topMediaRange.value === requestedTopMediaRange) commitModule('topMedia', topMedia.value, (value) => { topMediaItems.value = value; displayedPeriods.value.topMedia = requestedTopMediaRange }, periodCacheKey('topMedia', requestedTopMediaRange), completedAt)
+  if (topUsers.status === 'fulfilled' && moduleRequestVersions.topUsers === requestedVersions.topUsers && topUsersRange.value === requestedTopUsersRange) commitModule('topUsers', topUsers.value, (value) => { topUserItems.value = value; displayedPeriods.value.topUsers = requestedTopUsersRange }, periodCacheKey('topUsers', requestedTopUsersRange), completedAt)
   if (trend.status === 'fulfilled') commitModule('trend', trend.value, (value) => { trendItems.value = value }, trendCacheKey(), completedAt)
   loading.value = false
   publishFreshness()
@@ -181,13 +189,16 @@ async function loadPeriodModule<T extends unknown[]>(module: DashboardModule, ca
   const requestVersion = (moduleRequestVersions[module] || 0) + 1
   moduleRequestVersions[module] = requestVersion
   const key = periodCacheKey(module, cachePeriod)
-  if (!restoreModule(module, assign, key)) assign([] as unknown as T)
+  if (restoreModule(module, assign, key)) displayedPeriods.value[module] = cachePeriod
+  pendingPeriods.value += 1
   try {
     const value = await loader()
     if (moduleRequestVersions[module] !== requestVersion) return
     commitModule(module, value, assign, key)
+    displayedPeriods.value[module] = cachePeriod
     publishFreshness()
-  } catch { /* keep the last successful result for this range */ }
+  } catch { /* Retain visible data until a later refresh succeeds. */ }
+  finally { pendingPeriods.value -= 1 }
 }
 
 function loadHourly() { return loadPeriodModule('hourly', hourlyRange.value, () => fetchReportHourlyDistribution(hourlyRange.value), (value) => { hourlyItems.value = value }) }
@@ -258,9 +269,9 @@ function restoreTrendCache(): void {
 function restoreDashboardCache(): void {
   restoreModule<DashboardOverview>('overview', (value) => { overview.value = value })
   restoreModule<ReportOverview>('report', (value) => { reportOverview.value = value })
-  restoreModule<HourlyDistributionItem[]>('hourly', (value) => { hourlyItems.value = value }, periodCacheKey('hourly', hourlyRange.value))
-  restoreModule<TopMediaReportItem[]>('topMedia', (value) => { topMediaItems.value = value }, periodCacheKey('topMedia', topMediaRange.value))
-  restoreModule<TopUserReportItem[]>('topUsers', (value) => { topUserItems.value = value }, periodCacheKey('topUsers', topUsersRange.value))
+  restoreModule<HourlyDistributionItem[]>('hourly', (value) => { hourlyItems.value = value; displayedPeriods.value.hourly = hourlyRange.value }, periodCacheKey('hourly', hourlyRange.value))
+  restoreModule<TopMediaReportItem[]>('topMedia', (value) => { topMediaItems.value = value; displayedPeriods.value.topMedia = topMediaRange.value }, periodCacheKey('topMedia', topMediaRange.value))
+  restoreModule<TopUserReportItem[]>('topUsers', (value) => { topUserItems.value = value; displayedPeriods.value.topUsers = topUsersRange.value }, periodCacheKey('topUsers', topUsersRange.value))
   restoreTrendCache()
   publishFreshness()
 }
@@ -280,7 +291,12 @@ function publishFreshness(): void {
 
 restoreDashboardCache()
 onMounted(loadData)
+onUnmounted(() => {
+  loadRequestVersion += 1
+  for (const module of ['hourly', 'topMedia', 'topUsers'] as const) moduleRequestVersions[module] = (moduleRequestVersions[module] || 0) + 1
+})
 useRouteRefresh(refreshPage)
+useAutoRefresh(loadData, () => loading.value || pendingPeriods.value > 0)
 </script>
 
 <style scoped>

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">用户管理</h1>
-        <p class="page-subtitle">用户展示增强信息写入 admin.db，不修改飞牛用户表</p>
+        <p class="page-subtitle">管理用户别名、备注与显示状态</p>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="loadData">刷新</el-button>
     </div>
@@ -12,16 +12,13 @@
       <el-button :icon="Search" type="primary" :loading="loading" @click="applyFilters">搜索</el-button>
       <el-switch v-model="showHidden" active-text="显示隐藏用户" @change="applyFilters" />
     </div>
-    <div v-if="pageData?.error" class="error-panel">{{ pageData.error }}</div>
+    <div v-if="errorMessage" class="error-panel" role="status">{{ errorMessage }}</div>
     <div class="table-panel">
-      <el-table v-if="pageData?.items.length" v-loading="loading" :data="pageData.items">
+      <el-skeleton v-if="loading && !pageData" :rows="5" animated />
+      <el-table v-if="pageData?.items.length" :data="pageData.items">
         <el-table-column prop="username" min-width="160">
           <template #header><SortHeader label="用户名" sort-key="username" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
-        </el-table-column>
-        <el-table-column label="GUID" min-width="220">
-          <template #default="{ row }">
-            <span class="muted-guid">{{ row.guid }}</span>
-          </template>
+          <template #default="{ row }"><el-button text @click="selectedUser = row">{{ row.display_name || row.username }}</el-button></template>
         </el-table-column>
         <el-table-column prop="play_count" width="110">
           <template #header><SortHeader label="播放次数" sort-key="play_count" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
@@ -39,15 +36,16 @@
           <template #default="{ row }">{{ formatApplicationDateTime(row.last_login_at) }}</template>
         </el-table-column>
         <el-table-column prop="note" label="备注" min-width="180" />
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="160">
           <template #default="{ row }">
+            <el-button size="small" text @click="selectedUser = row">详情</el-button>
             <el-button size="small" text @click="toggleHidden(row.guid, !row.hidden)">
               {{ row.hidden ? '恢复' : '隐藏' }}
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-      <EmptyState v-else description="暂无用户数据或未识别用户表" />
+      <EmptyState v-else-if="!loading && !errorMessage" description="暂无用户数据或未识别用户表" />
       <PaginationFooter
         v-if="pageData"
         :page="page"
@@ -58,6 +56,7 @@
         @page-size-change="handlePageSizeChange"
       />
     </div>
+    <UserDetailsDrawer :user="selectedUser" @close="selectedUser = null" @saved="profileSaved" />
   </section>
 </template>
 
@@ -66,18 +65,24 @@ import { defineComponent, h, onMounted, ref } from 'vue'
 import { ArrowDown, ArrowUp, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchUsers, hideUser, type UserItem } from '../api/modules'
-import type { PageData } from '../types/api'
+import { useRetainedPage } from '../utils/retainedPage'
+import { useAutoRefresh } from '../utils/autoRefresh'
+import UserDetailsDrawer from '../components/UserDetailsDrawer.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 import { formatApplicationDateTime } from '../utils/applicationTime'
 
+const selectedUser = ref<UserItem | null>(null)
+function profileSaved(user: UserItem) {
+  selectedUser.value = user
+  if (pageData.value) pageData.value = { ...pageData.value, items: pageData.value.items.map((item) => item.guid === user.guid ? user : item) }
+  void loadData()
+}
 const keyword = ref('')
 const showHidden = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
-const pageData = ref<PageData<UserItem> | null>(null)
-const loading = ref(false)
 type SortDirection = 'asc' | 'desc'
 const sortBy = ref('')
 const sortOrder = ref<SortDirection>('asc')
@@ -103,23 +108,13 @@ const SortHeader = defineComponent({
   }
 })
 
+const { pageData, loading, errorMessage, loadData: requestPage } = useRetainedPage<UserItem>(() =>
+  fetchUsers({ page: page.value, page_size: pageSize.value, keyword: keyword.value, show_hidden: showHidden.value, sort_by: sortBy.value || undefined, sort_order: sortOrder.value }, { suppressGlobalError: true }))
 async function loadData() {
-  loading.value = true
-  try {
-    pageData.value = await fetchUsers({
-      page: page.value,
-      page_size: pageSize.value,
-      keyword: keyword.value,
-      show_hidden: showHidden.value,
-      sort_by: sortBy.value || undefined,
-      sort_order: sortOrder.value || undefined
-    })
-    page.value = pageData.value.page
-    pageSize.value = pageData.value.page_size
-  } finally {
-    loading.value = false
-  }
+  const data = await requestPage()
+  if (data) { page.value = data.page; pageSize.value = data.page_size }
 }
+useAutoRefresh(loadData, () => loading.value)
 
 async function applyFilters() {
   page.value = 1
