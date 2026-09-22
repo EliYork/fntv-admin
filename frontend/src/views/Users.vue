@@ -12,7 +12,7 @@
       <el-button :icon="Search" type="primary" :loading="loading" @click="applyFilters">搜索</el-button>
       <el-switch v-model="showHidden" active-text="显示隐藏用户" @change="applyFilters" />
     </div>
-    <div v-if="errorMessage" class="error-panel" role="status">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="refresh-notice" role="status">{{ errorMessage }}</div>
     <div class="table-panel">
       <el-skeleton v-if="loading && !pageData" :rows="5" animated />
       <el-table v-if="pageData?.items.length" :data="pageData.items">
@@ -20,7 +20,7 @@
           <template #header><SortHeader label="用户名" sort-key="username" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
           <template #default="{ row }"><el-button text @click="selectedUser = row">{{ row.display_name || row.username }}</el-button></template>
         </el-table-column>
-        <el-table-column prop="play_count" width="110">
+        <el-table-column align="right" prop="play_count" width="110">
           <template #header><SortHeader label="播放次数" sort-key="play_count" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
         </el-table-column>
         <el-table-column prop="watch_seconds" width="120">
@@ -35,7 +35,7 @@
           <template #header><SortHeader label="最近登录" sort-key="last_login_at" :active-key="sortBy" :direction="sortOrder" @sort="applySort" /></template>
           <template #default="{ row }">{{ formatApplicationDateTime(row.last_login_at) }}</template>
         </el-table-column>
-        <el-table-column prop="note" label="备注" min-width="180" />
+        <el-table-column prop="note" label="备注" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button size="small" text @click="selectedUser = row">详情</el-button>
@@ -166,9 +166,10 @@ useRouteRefresh(loadData)
   align-items: center;
   justify-content: flex-start;
   gap: 5px;
+  white-space: nowrap;
   width: 100%;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 6px;
   border: 0;
   background: transparent;
   color: inherit;

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')
@@ -23,11 +25,26 @@ try {
     else if (url.pathname === '/api/media/movie-1') data = movie
     else if (url.pathname.endsWith('/top-users')) data = [{ user_guid: 'u-1', username: '用户甲', play_count: 4 }]
     else if (url.pathname.endsWith('/top-media')) data = [{ item_guid: movie.guid, title: movie.title, play_count: 3 }]
-    else if (url.pathname.endsWith('/overview')) data = { database_ok: true, total_users: 1, total_play_records: 1 }
+    else if (url.pathname.endsWith('/overview')) data = { database_ok: true, total_users: 12, active_users_7d: 5, today_plays: 18, total_play_records: 1286 }
+    else if (url.pathname.endsWith('/play-trend')) data = Array.from({ length: 365 }, (_, i) => ({ date: new Date(Date.UTC(2025, 8, 24 + i)).toISOString().slice(0, 10), play_count: i % 7 * 3 }))
+    else if (url.pathname.endsWith('/hourly-distribution')) data = Array.from({ length: 24 }, (_, hour) => ({ hour, play_count: hour > 16 ? (hour - 15) * 7 : hour % 4 * 2 }))
     else if (url.pathname.startsWith('/api/reports/')) data = []
     await route.fulfill({ json: { success: true, data, message: 'ok' } })
   })
   await page.goto(process.env.FRONTEND_URL || 'http://localhost:18127')
+  if (process.env.SCREENSHOT_DIR) {
+    await mkdir(process.env.SCREENSHOT_DIR, { recursive: true })
+    await page.getByRole('link', { name: '用户甲' }).waitFor()
+    for (const theme of ['light', 'dark']) {
+      if (theme === 'dark') await page.getByRole('button', { name: '切换到深色主题' }).click()
+      await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, `dashboard-${theme}.png`) })
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'dashboard-mobile.png') })
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'mobile document must not overflow')
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.getByRole('button', { name: '切换到浅色主题' }).click()
+  }
   await page.getByRole('link', { name: '用户甲' }).click()
   await page.waitForURL('**/history?user=u-1')
   await page.getByText('观看记录', { exact: true }).waitFor()
@@ -51,6 +68,13 @@ try {
   await page.getByRole('button', { name: '播放次数，点击排序', exact: true }).click()
   await page.locator('.el-pager li').filter({ hasText: /^2$/ }).click()
   await page.getByRole('button', { name: '测试用户20', exact: true }).waitFor()
+  if (process.env.SCREENSHOT_DIR) {
+    await page.getByRole('button', { name: '测试用户20', exact: true }).click()
+    await page.getByText('显示别名', { exact: true }).waitFor()
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: join(process.env.SCREENSHOT_DIR, 'user-details.png') })
+    await page.locator('.el-drawer:visible .el-drawer__close-btn').click()
+  }
   await page.locator('.main-view').evaluate((el) => { el.scrollTop = 300 })
   const before = await page.locator('.main-view').evaluate((el) => el.scrollTop)
   assert.ok(before > 0)

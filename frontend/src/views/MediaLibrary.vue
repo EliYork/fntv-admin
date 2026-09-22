@@ -19,19 +19,19 @@
       <el-switch v-model="showHidden" active-text="显示隐藏媒体" @change="applyFilters" />
     </div>
 
-    <div v-if="errorMessage" class="error-panel" role="status">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="refresh-notice" role="status">{{ errorMessage }}</div>
     <div class="table-panel">
       <el-skeleton v-if="loading && !pageData" :rows="5" animated />
       <el-table v-if="pageData?.items.length" :data="pageData.items" row-key="guid" @row-click="openSeriesFromRow">
         <el-table-column label="标题" min-width="260">
           <template #default="{ row }">
-            <button class="series-title-button" type="button" @click.stop="openSeries(row)">{{ row.title || '-' }}</button>
+            <button class="series-title-button text-two-lines" type="button" @click.stop="openSeries(row)">{{ row.title || '-' }}</button>
             <div v-if="row.title === row.guid" class="muted-guid">{{ row.guid }}</div>
           </template>
         </el-table-column>
         <el-table-column label="类型" width="110"><template #default="{ row }">{{ mediaTypeLabel(row.media_type) }}</template></el-table-column>
         <el-table-column label="内容概况 / 时长" min-width="150"><template #default="{ row }">{{ contentSummary(row) }}</template></el-table-column>
-        <el-table-column prop="play_count" label="播放次数" width="110" />
+        <el-table-column align="right" prop="play_count" label="播放次数" width="110" />
         <el-table-column label="操作" width="170">
           <template #default="{ row }">
             <el-button size="small" text @click.stop="openSeries(row)">{{ isSeries(row) ? '查看层级' : '查看详情' }}</el-button>

@@ -39,7 +39,7 @@
       </label>
     </form>
 
-    <div v-if="errorMessage" class="history-error" role="alert">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="refresh-notice" role="status">{{ errorMessage }}</div>
 
     <div v-if="initialLoading" class="history-loading" aria-label="正在加载观看历史">
       <el-skeleton :rows="5" animated />

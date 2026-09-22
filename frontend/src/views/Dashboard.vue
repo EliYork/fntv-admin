@@ -58,7 +58,7 @@
               <strong v-else>未命名媒体</strong>
               <small v-if="item.parent_title">{{ item.parent_title }}</small>
             </span>
-            <span class="rank-value">{{ item.play_count }}<small>次</small></span>
+            <span class="rank-value">{{ item.play_count }}<small>次</small><span class="rank-chevron" aria-hidden="true">›</span></span>
           </li>
         </ol>
         <EmptyState v-else-if="!loading" description="暂无热门内容数据" />
@@ -80,7 +80,7 @@
               <strong v-else>未知用户</strong>
               <small v-if="item.watch_seconds">{{ formatWatchDuration(item.watch_seconds) }}</small>
             </span>
-            <span class="rank-value">{{ item.play_count }}<small>次</small></span>
+            <span class="rank-value">{{ item.play_count }}<small>次</small><span class="rank-chevron" aria-hidden="true">›</span></span>
           </li>
         </ol>
         <EmptyState v-else-if="!loading" description="暂无活跃用户数据" />
@@ -303,12 +303,17 @@ useAutoRefresh(loadData, () => loading.value || pendingPeriods.value > 0)
 </script>
 
 <style scoped>
+.rank-link::after { content: ''; position: absolute; inset: 0; border-radius: 8px; }
+.rank-list li:has(.rank-link):hover { background: var(--app-row-hover); }
+.rank-list li:has(.rank-link:focus-visible) { outline: 2px solid var(--app-accent); outline-offset: 2px; border-radius: 8px; }
+.rank-chevron { margin-left: 14px; color: var(--app-muted); font-size: 20px; font-weight: 400; }
+
 .rank-link { overflow: hidden; color: var(--app-title); font-size: 14px; font-weight: 600; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .rank-link:hover { color: var(--app-accent); text-decoration: underline; }
 .rank-link:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 3px; }
 
 .observatory-page { display: grid; gap: clamp(34px, 4vw, 58px); min-width: 0; color: var(--app-text); }
-.metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--app-border); border-bottom: 1px solid var(--app-border); }
+.metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--app-border-soft); border-radius: 14px; overflow: hidden; background: var(--app-surface); }
 
 .metric-item {
   display: grid;
@@ -330,7 +335,7 @@ useAutoRefresh(loadData, () => loading.value || pendingPeriods.value > 0)
 .section-period { color: var(--app-muted); font-size: 12px; }
 .trend-heading { justify-content: flex-start; }
 .trend-heading .section-period { line-height: 1; }
-.period-select { width: 88px; }
+.period-select { width: 100px; flex-shrink: 0; }
 .trend-section { padding-top: 2px; }
 
 .hourly-scroll { overflow-x: auto; overflow-y: hidden; padding: 3px 0 2px; }
@@ -345,7 +350,7 @@ useAutoRefresh(loadData, () => loading.value || pendingPeriods.value > 0)
 .rank-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr); gap: clamp(34px, 5vw, 76px); }
 .rank-panel { display: grid; align-content: start; gap: 15px; }
 .rank-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--app-border-soft); }
-.rank-list li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 58px; padding: 8px 4px; border-bottom: 1px solid var(--app-border-soft); }
+.rank-list li { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 58px; padding: 10px 12px; border-bottom: 1px solid var(--app-border-soft); }
 .rank-index { color: var(--app-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .rank-content { display: grid; gap: 2px; min-width: 0; }
 .rank-content strong { overflow: hidden; color: var(--app-title); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }

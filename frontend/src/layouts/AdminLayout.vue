@@ -85,6 +85,7 @@
             :key="item.path"
             class="navigation-item"
             :class="{ 'is-active': route.path === item.path }"
+            :aria-current="route.path === item.path ? 'page' : undefined"
             type="button"
             @click="navigateTo(item.path)"
           >
@@ -487,7 +488,8 @@ onUnmounted(() => {
 }
 
 .navigation-item:hover, .navigation-item.is-active { background: var(--app-surface-soft); }
-.navigation-item.is-active { color: var(--app-accent); }
+.navigation-item.is-active { color: var(--app-accent); box-shadow: inset 3px 0 var(--app-accent); background: var(--app-row-hover); }
+.navigation-item:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
 .navigation-item span { display: grid; gap: 2px; min-width: 0; }
 .navigation-item strong { color: var(--app-title); font-size: 14px; font-weight: 650; }
 .navigation-item small { overflow: hidden; color: var(--app-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

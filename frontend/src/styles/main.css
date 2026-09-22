@@ -394,3 +394,23 @@ button,
     width: 100% !important;
   }
 }
+
+/* Shared management surfaces and unobtrusive refresh feedback. */
+.toolbar { gap: 12px; padding: 16px; border: 1px solid var(--app-border-soft); border-radius: 12px; background: var(--app-surface); }
+.table-panel { border-radius: 12px; overflow: hidden; }
+.table-panel .el-table { --el-table-header-bg-color: var(--app-surface-soft); }
+.table-panel .el-table .el-table__cell { padding-top: 13px; padding-bottom: 13px; }
+.table-panel .el-table th { font-size: 12px; color: var(--app-muted-strong); }
+.table-panel .el-table td { font-variant-numeric: tabular-nums; }
+.text-two-lines { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.6; }
+.refresh-notice { padding: 8px 0; margin: 8px 0; color: var(--app-muted-strong); font-size: 12px; line-height: 1.6; }
+.refresh-notice::before { content: '↻'; margin-right: 7px; color: var(--app-accent); }
+.el-drawer__header { padding-bottom: 16px; border-bottom: 1px solid var(--app-border-soft); }
+.el-drawer__body { overscroll-behavior: contain; }
+@media (max-width: 640px) {
+  .toolbar { padding: 12px; gap: 10px; }
+  .toolbar > .el-input { width: 100% !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
