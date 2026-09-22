@@ -54,7 +54,8 @@
           <li v-for="(item, index) in topMediaItems" :key="item.item_guid || `${item.title}-${index}`">
             <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="rank-content">
-              <strong>{{ item.title || item.item_guid || '未命名媒体' }}</strong>
+              <RouterLink v-if="item.item_guid" class="rank-link" :to="{ path: '/media', query: { media: item.item_guid } }">{{ item.title || item.item_guid }}</RouterLink>
+              <strong v-else>未命名媒体</strong>
               <small v-if="item.parent_title">{{ item.parent_title }}</small>
             </span>
             <span class="rank-value">{{ item.play_count }}<small>次</small></span>
@@ -75,7 +76,8 @@
           <li v-for="(item, index) in topUserItems" :key="item.user_guid || `${item.username}-${index}`">
             <span class="rank-index">{{ String(index + 1).padStart(2, '0') }}</span>
             <span class="rank-content">
-              <strong>{{ item.username || item.user_guid || '未知用户' }}</strong>
+              <RouterLink v-if="item.user_guid" class="rank-link" :to="{ path: '/history', query: { user: item.user_guid } }">{{ item.username || item.user_guid }}</RouterLink>
+              <strong v-else>未知用户</strong>
               <small v-if="item.watch_seconds">{{ formatWatchDuration(item.watch_seconds) }}</small>
             </span>
             <span class="rank-value">{{ item.play_count }}<small>次</small></span>
@@ -90,6 +92,7 @@
 </template>
 
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   fetchDashboardOverview,
@@ -300,6 +303,10 @@ useAutoRefresh(loadData, () => loading.value || pendingPeriods.value > 0)
 </script>
 
 <style scoped>
+.rank-link { overflow: hidden; color: var(--app-title); font-size: 14px; font-weight: 600; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.rank-link:hover { color: var(--app-accent); text-decoration: underline; }
+.rank-link:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 3px; }
+
 .observatory-page { display: grid; gap: clamp(34px, 4vw, 58px); min-width: 0; color: var(--app-text); }
 .metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--app-border); border-bottom: 1px solid var(--app-border); }
 

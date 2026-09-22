@@ -1,15 +1,23 @@
-import { onMounted, onUnmounted } from 'vue'
+import { onActivated, onDeactivated, onMounted, onUnmounted } from 'vue'
 
-/** Poll only the visible page; schedule after completion to avoid overlapping polls. */
+/** Cached pages stop polling until activated again. */
 export function useAutoRefresh(refresh: () => Promise<unknown>, busy: () => boolean, intervalMs = 60_000) {
   let timer: ReturnType<typeof setTimeout> | undefined
-  let stopped = false
+  let active = false
+  let running = false
+  function schedule() { if (active && !timer && !running) timer = setTimeout(tick, intervalMs) }
   async function tick() {
+    timer = undefined
+    running = true
     try {
-      if (document.visibilityState === 'visible' && !busy()) await refresh()
-    } catch { /* The owning view displays its local error and retains successful data. */ }
-    finally { if (!stopped) timer = setTimeout(tick, intervalMs) }
+      if (active && document.visibilityState === 'visible' && !busy()) await refresh()
+    } catch { /* The owning view retains successful data and its local error. */ }
+    finally { running = false; schedule() }
   }
-  onMounted(() => { timer = setTimeout(tick, intervalMs) })
-  onUnmounted(() => { stopped = true; clearTimeout(timer) })
+  function start() { active = true; schedule() }
+  function stop() { active = false; clearTimeout(timer); timer = undefined }
+  onMounted(start)
+  onActivated(start)
+  onDeactivated(stop)
+  onUnmounted(stop)
 }

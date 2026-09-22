@@ -7,9 +7,11 @@ const root = process.cwd()
 const ts = require(resolve('frontend/node_modules/typescript'))
 const vue = require(resolve('frontend/node_modules/vue'))
 const compiler = require(resolve('frontend/node_modules/@vue/compiler-sfc'))
-let mounts = [], unmounts = [], timers = [], hidden = false
+let mounts = [], unmounts = [], activations = [], deactivations = [], timers = [], hidden = false
+const route = vue.reactive({ path: "/media", query: {} })
+const router = { replace: async (target) => { Object.assign(route, target) } }
 const api = {}
-const fakeVue = { ...vue, onMounted: (fn) => mounts.push(fn), onUnmounted: (fn) => unmounts.push(fn) }
+const fakeVue = { ...vue, onMounted: (fn) => mounts.push(fn), onUnmounted: (fn) => unmounts.push(fn), onActivated: (fn) => activations.push(fn), onDeactivated: (fn) => deactivations.push(fn) }
 const document = { get visibilityState() { return hidden ? 'hidden' : 'visible' }, querySelector: () => null }
 function load(path) {
   const absolute = resolve(root, path)
@@ -19,6 +21,7 @@ function load(path) {
   const module = { exports: {} }
   const localRequire = (name) => {
     if (name === 'vue') return fakeVue
+    if (name === 'vue-router') return { useRoute: () => route, useRouter: () => router, RouterLink: {} }
     if (name === 'element-plus') return { ElMessage: { success() {} } }
     if (name.startsWith('@element-plus')) return {}
     if (name.endsWith('/api/modules')) return api
@@ -66,8 +69,8 @@ api.fetchMediaChildren = () => { const d = deferred(); requests.push(d); return 
 api.fetchMedia = async (params) => { assert.equal(params.show_hidden, true); return page('restored') }
 const media = setup('frontend/src/views/MediaLibrary.vue')
 media.showHidden.value = true; await media.loadData(); assert.equal(media.pageData.value.items[0].guid, 'restored')
-const first = media.openSeries({ guid: 'first', title: 'First' })
-const second = media.openSeries({ guid: 'second', title: 'Second' })
+const first = media.openSeries({ guid: 'first', title: 'First', media_type: 'Series' })
+const second = media.openSeries({ guid: 'second', title: 'Second', media_type: 'Series' })
 requests[1].resolve([{ guid: 'second-season' }]); await second
 requests[0].resolve([{ guid: 'first-season' }]); await first
 assert.equal(media.seriesChildren.value[0].guid, 'second-season')
@@ -126,3 +129,24 @@ requests[2].resolve([{ hour: 1, play_count: 5 }]); await fullRefresh
 assert.equal(dashboard.hourlyItems.value[0].play_count, 20, 'older page refresh cannot replace a newer chart request')
 assert.equal(dashboard.displayedPeriods.value.hourly, '7')
 console.log('dashboard stale charts and overlapping refresh tests passed')
+
+activations = []; deactivations = []; mounts = []; unmounts = []; timers = []
+let activationPolls = 0
+useAutoRefresh(async () => { activationPolls += 1 }, () => false)
+mounts.forEach((fn) => fn()); activations.forEach((fn) => fn())
+assert.equal(timers.length, 1, 'initial activation must not duplicate the mounted timer')
+deactivations.forEach((fn) => fn()); assert.equal(timers.length, 0)
+activations.forEach((fn) => fn()); await timers.shift()()
+assert.equal(activationPolls, 1, 'cached page restarts polling after returning')
+unmounts.forEach((fn) => fn())
+api.fetchMediaDetail = async (guid) => ({ guid, title: 'Movie', media_type: 'Movie', runtime: '90 分钟' })
+await media.openLinkedMedia('movie-guid')
+assert.equal(media.selectedSeries.value.guid, 'movie-guid')
+assert.equal(media.seriesDrawerVisible.value, true)
+assert.equal(media.seriesChildren.value.length, 0, 'movie details do not request series children')
+const filteredProps = vue.reactive({ filterUser: 'user-one' })
+const filteredHistory = setup('frontend/src/components/HistoryFeed.vue', filteredProps)
+assert.equal(filteredHistory.userGuid.value, 'user-one')
+filteredProps.filterUser = 'user-two'; await vue.nextTick()
+assert.equal(filteredHistory.userGuid.value, 'user-two')
+console.log('cached view polling, media deep links and history user filters passed')

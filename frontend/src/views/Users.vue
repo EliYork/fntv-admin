@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineComponent, h, onMounted, ref } from 'vue'
+import { defineComponent, h, onDeactivated, onMounted, ref } from 'vue'
 import { ArrowDown, ArrowUp, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchUsers, hideUser, type UserItem } from '../api/modules'
@@ -154,6 +154,7 @@ async function toggleHidden(guid: string, hidden: boolean) {
   await loadData()
 }
 
+onDeactivated(() => { selectedUser.value = null })
 onMounted(loadData)
 useRouteRefresh(loadData)
 </script>

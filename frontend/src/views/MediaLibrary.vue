@@ -25,8 +25,7 @@
       <el-table v-if="pageData?.items.length" :data="pageData.items" row-key="guid" @row-click="openSeriesFromRow">
         <el-table-column label="标题" min-width="260">
           <template #default="{ row }">
-            <button v-if="isSeries(row)" class="series-title-button" type="button" @click.stop="openSeries(row)">{{ row.title || '-' }}</button>
-            <span v-else>{{ row.title || '-' }}</span>
+            <button class="series-title-button" type="button" @click.stop="openSeries(row)">{{ row.title || '-' }}</button>
             <div v-if="row.title === row.guid" class="muted-guid">{{ row.guid }}</div>
           </template>
         </el-table-column>
@@ -35,7 +34,7 @@
         <el-table-column prop="play_count" label="播放次数" width="110" />
         <el-table-column label="操作" width="170">
           <template #default="{ row }">
-            <el-button v-if="isSeries(row)" size="small" text @click.stop="openSeries(row)">查看层级</el-button>
+            <el-button size="small" text @click.stop="openSeries(row)">{{ isSeries(row) ? '查看层级' : '查看详情' }}</el-button>
             <el-button size="small" text @click.stop="toggleHidden(row.guid, !row.hidden)">{{ row.hidden ? '恢复' : '隐藏' }}</el-button>
           </template>
         </el-table-column>
@@ -46,15 +45,16 @@
 
     <el-drawer v-model="seriesDrawerVisible" class="series-drawer" size="min(94vw, 520px)" destroy-on-close @closed="resetSeriesDrawer">
       <template #header>
-        <div class="series-drawer-heading"><strong>{{ selectedSeries?.title || '电视剧详情' }}</strong><span>{{ seriesMeta }}</span></div>
+        <div class="series-drawer-heading"><strong>{{ selectedSeries?.title || '媒体详情' }}</strong><span>{{ seriesMeta }}</span></div>
       </template>
       <div v-loading="seriesLoading" class="series-hierarchy">
         <div v-if="selectedSeries" class="series-basics">
-          <span class="media-type-chip">剧集</span>
+          <span class="media-type-chip">{{ mediaTypeLabel(selectedSeries.media_type) }}</span>
+          <span v-if="selectedSeries.runtime">{{ selectedSeries.runtime }}</span>
           <span v-if="selectedSeries.play_count">播放 {{ selectedSeries.play_count }} 次</span>
           <span v-if="selectedSeries.release_time">{{ selectedSeries.release_time }}</span>
         </div>
-        <div v-if="seriesError" class="hierarchy-empty">{{ seriesError }} <el-button text @click="selectedSeries && openSeries(selectedSeries)">重试</el-button></div>
+        <div v-if="seriesError" class="hierarchy-empty">{{ seriesError }} <el-button text @click="selectedSeries ? openSeries(selectedSeries) : requestedGuid && openLinkedMedia(requestedGuid)">重试</el-button></div>
         <template v-else-if="seriesChildren.length">
           <div v-for="season in seasons" :key="season.guid" class="season-group">
             <button class="season-button" type="button" :aria-expanded="expandedSeasons.has(season.guid)" @click="toggleSeason(season)">
@@ -78,23 +78,49 @@
             </div>
           </div>
         </template>
-        <div v-else-if="!seriesLoading" class="hierarchy-empty">暂无可用的季/集层级信息</div>
+        <div v-else-if="!seriesLoading && selectedSeries && isSeries(selectedSeries)" class="hierarchy-empty">暂无可用的季/集层级信息</div>
       </div>
     </el-drawer>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { computed, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowRight, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { fetchMedia, fetchMediaChildren, hideMedia, type MediaItem } from '../api/modules'
+import { fetchMedia, fetchMediaDetail, fetchMediaChildren, hideMedia, type MediaItem } from '../api/modules'
 import { useRetainedPage } from '../utils/retainedPage'
 import { useAutoRefresh } from '../utils/autoRefresh'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationFooter from '../components/PaginationFooter.vue'
 import { useRouteRefresh } from '../utils/routeRefresh'
 
+const route = useRoute()
+const router = useRouter()
+let detailVersion = 0
+let requestedGuid = ''
+async function openLinkedMedia(guid: string) {
+  const version = ++detailVersion
+  requestedGuid = guid
+  selectedSeries.value = null
+  seriesDrawerVisible.value = true
+  seriesLoading.value = true
+  seriesError.value = ''
+  seriesChildren.value = []
+  seriesVersion += 1
+  try {
+    const media = await fetchMediaDetail(guid)
+    if (version !== detailVersion) return
+    if (media.guid !== guid || !media.media_type) throw new Error('media-unavailable')
+    await openSeries(media)
+  } catch {
+    if (version === detailVersion) { seriesError.value = '媒体详情暂时无法加载，请重试'; seriesLoading.value = false }
+  }
+}
+watch(() => [route.path, route.query.media], () => {
+  if (route.path === '/media' && typeof route.query.media === 'string' && route.query.media !== requestedGuid) void openLinkedMedia(route.query.media)
+})
 const keyword = ref('')
 const showHidden = ref(false)
 const mediaType = ref('')
@@ -114,7 +140,8 @@ const episodesBySeason = ref<Record<string, MediaItem[]>>({})
 const seasons = computed(() => seriesChildren.value.filter((item) => item.media_type.toLowerCase() === 'season'))
 const directEpisodes = computed(() => seriesChildren.value.filter((item) => item.media_type.toLowerCase() === 'episode'))
 const seriesMeta = computed(() => {
-  if (seriesLoading.value) return '正在读取层级…'
+  if (seriesLoading.value) return '正在加载…'
+  if (selectedSeries.value && !isSeries(selectedSeries.value)) return '媒体详情'
   const parts: string[] = []
   if (seasons.value.length) parts.push(`${seasons.value.length} 季`)
   if (directEpisodes.value.length) parts.push(`${directEpisodes.value.length} 集未分季`)
@@ -133,7 +160,7 @@ async function applyFilters() { page.value = 1; await loadData() }
 async function handlePageChange(value: number) { page.value = value; await loadData() }
 async function handlePageSizeChange(value: number) { pageSize.value = value; page.value = 1; await loadData() }
 async function toggleHidden(guid: string, hidden: boolean) { await hideMedia(guid, hidden); ElMessage.success(hidden ? '已隐藏媒体' : '已恢复媒体'); page.value = 1; await loadData() }
-function openSeriesFromRow(row: MediaItem): void { if (isSeries(row)) void openSeries(row) }
+function openSeriesFromRow(row: MediaItem): void { void openSeries(row) }
 
 async function openSeries(series: MediaItem): Promise<void> {
   const version = ++seriesVersion
@@ -147,7 +174,7 @@ async function openSeries(series: MediaItem): Promise<void> {
   episodesBySeason.value = {}
   seasonErrors.value = {}
   try {
-    const children = await fetchMediaChildren(series.guid)
+    const children = isSeries(series) ? await fetchMediaChildren(series.guid) : []
     if (version === seriesVersion) seriesChildren.value = children
   } catch { if (version === seriesVersion) seriesError.value = '层级加载失败，请重试' }
   finally { if (version === seriesVersion) seriesLoading.value = false }
@@ -181,8 +208,19 @@ function resetSeriesDrawer(): void {
   seriesVersion += 1
   selectedSeries.value = null; seriesChildren.value = []; seriesError.value = ''; expandedSeasons.value = new Set(); seasonLoading.value = new Set(); episodesBySeason.value = {}; seasonErrors.value = {}; seriesLoading.value = false
 }
-watch(seriesDrawerVisible, (visible) => { if (!visible) seriesVersion += 1 })
-onUnmounted(() => { seriesVersion += 1 })
+watch(seriesDrawerVisible, (visible) => {
+  if (!visible) {
+    seriesVersion += 1
+    detailVersion += 1
+    requestedGuid = ''
+    if (route.path === '/media' && route.query.media) {
+      const { media: _media, ...query } = route.query
+      void router.replace({ path: route.path, query })
+    }
+  }
+})
+onDeactivated(() => { seriesDrawerVisible.value = false; detailVersion += 1; seriesVersion += 1 })
+onUnmounted(() => { seriesVersion += 1; detailVersion += 1 })
 function isSeries(item: MediaItem): boolean { return ['series', 'tv'].includes(item.media_type.toLowerCase()) }
 function contentSummary(item: MediaItem): string {
   return isSeries(item) ? '剧集' : String(item.runtime || '-')
@@ -197,7 +235,10 @@ function episodeMarker(episode: MediaItem, season?: MediaItem): string {
 }
 function mediaTypeLabel(type: string): string { return ({ Movie: '电影', Series: '剧集', TV: '剧集', Video: '视频' } as Record<string, string>)[type] || type || '未知' }
 
-onMounted(loadData)
+onMounted(() => {
+  void loadData()
+  if (typeof route.query.media === 'string') void openLinkedMedia(route.query.media)
+})
 useRouteRefresh(loadData)
 </script>
 

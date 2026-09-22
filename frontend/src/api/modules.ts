@@ -195,6 +195,10 @@ export function fetchMedia(params: Record<string, unknown>, options?: { suppress
   return getApi<PageData<MediaItem>>('/media', params, options)
 }
 
+export function fetchMediaDetail(guid: string) {
+  return getApi<MediaItem>(`/media/${encodeURIComponent(guid)}`, undefined, { suppressGlobalError: true })
+}
+
 export function fetchMediaChildren(guid: string) {
   return getApi<MediaItem[]>(`/media/${encodeURIComponent(guid)}/children`, undefined, { suppressGlobalError: true })
 }

@@ -66,11 +66,17 @@
       </div>
     </header>
 
-    <main id="main-content" class="main-view" tabindex="-1">
-      <div class="page-container"><router-view /></div>
+    <main ref="mainView" id="main-content" class="main-view" tabindex="-1">
+      <div class="page-container">
+        <router-view v-slot="{ Component, route: currentRoute }">
+          <KeepAlive :include="['Dashboard', 'History', 'Users', 'MediaLibrary']" :max="4">
+            <component :is="Component" :key="currentRoute.path" />
+          </KeepAlive>
+        </router-view>
+      </div>
     </main>
 
-    <el-drawer id="features-drawer" v-model="drawerVisible" class="settings-drawer" title="功能与设置" size="min(92vw, 390px)">
+    <el-drawer direction="ltr" id="features-drawer" v-model="drawerVisible" class="settings-drawer" title="功能与设置" size="min(92vw, 390px)">
       <nav class="drawer-navigation" aria-label="后台功能导航">
         <section v-for="group in navigationGroups" :key="group.label" class="navigation-group">
           <h2>{{ group.label }}</h2>
@@ -97,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
@@ -130,6 +136,14 @@ interface DashboardFreshness {
 }
 
 const route = useRoute()
+const mainView = ref<HTMLElement | null>(null)
+const scrollPositions = new Map<string, number>()
+watch(() => route.path, async (path, previous) => {
+  if (mainView.value) scrollPositions.set(previous, mainView.value.scrollTop)
+  await nextTick()
+  if (route.path === path && mainView.value) mainView.value.scrollTop = scrollPositions.get(path) || 0
+})
+
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()

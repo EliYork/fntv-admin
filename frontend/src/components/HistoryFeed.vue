@@ -25,6 +25,7 @@
         <el-option label="全部时间" value="all" />
       </el-select>
       <el-select v-model="userGuid" aria-label="选择用户" clearable filterable placeholder="全部用户" @change="applyFilters">
+        <el-option v-if="userGuid && !userOptions.some((user) => user.guid === userGuid)" :value="userGuid" :label="items.find((item) => item.user_guid === userGuid)?.username || userGuid" />
         <el-option v-for="user in userOptions" :key="user.guid" :label="user.display_name || user.username || user.guid" :value="user.guid" />
       </el-select>
       <el-button native-type="submit" :loading="initialLoading">筛选</el-button>
@@ -99,14 +100,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Download, Search } from '@element-plus/icons-vue'
 import { downloadHistoryCsv, fetchHistory, fetchUsers, type HistoryItem, type UserItem } from '../api/modules'
 import { useAutoRefresh } from '../utils/autoRefresh'
 import EmptyState from './EmptyState.vue'
 import { applicationTodayKey, calendarDayDifference, parseApplicationDateTime, type ApplicationDateParts } from '../utils/applicationTime'
 
-withDefaults(defineProps<{ heading?: string; headingTag?: 'h1' | 'h2' }>(), { heading: '观看历史', headingTag: 'h2' })
+const props = withDefaults(defineProps<{ heading?: string; headingTag?: 'h1' | 'h2'; filterUser?: string }>(), { heading: '观看历史', headingTag: 'h2', filterUser: '' })
 
 type HistoryRange = 'today' | '7d' | '30d' | 'all'
 
@@ -118,7 +119,7 @@ interface HistoryGroup {
 
 const keyword = ref('')
 const range = ref<HistoryRange>('all')
-const userGuid = ref('')
+const userGuid = ref(props.filterUser || '')
 const pageSize = ref(50)
 const nextPage = ref(1)
 const total = ref(0)
@@ -133,6 +134,7 @@ const errorMessage = ref('')
 const applicationTimezone = ref('Asia/Shanghai')
 const loadSentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
+let active = true
 let requestVersion = 0
 const refreshing = ref(false)
 
@@ -300,7 +302,7 @@ async function loadUserOptions() {
 
 function setupObserver() {
   observer?.disconnect()
-  if (!loadSentinel.value) return
+  if (!active || !loadSentinel.value) return
   observer = new IntersectionObserver(
     (entries) => {
       if (entries.some((entry) => entry.isIntersecting) && hasMore.value) void loadNextPage()
@@ -412,6 +414,14 @@ async function refresh() {
   await resetAndLoad(true)
 }
 
+watch(() => props.filterUser, (guid) => {
+  userGuid.value = guid || ''
+  keyword.value = ''
+  range.value = 'all'
+  void resetAndLoad()
+})
+onActivated(() => { active = true; void nextTick(setupObserver) })
+onDeactivated(() => { active = false; observer?.disconnect() })
 defineExpose({ refresh })
 
 onMounted(async () => {
